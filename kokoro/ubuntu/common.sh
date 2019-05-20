@@ -45,7 +45,7 @@ sudo apt-get -y --purge autoremove mpi-default-dev
 sudo apt-get -y --purge autoremove openmpi-bin
 
 ## Install required packages for build
-sudo apt-get -y install python-pip git libopenblas-dev
+sudo apt-get -y install python-pip git libblas-dev libatlas-dev liblapack-dev
 sudo pip install --upgrade google-api-python-client
 sudo pip install --upgrade oauth2client
 
@@ -91,7 +91,7 @@ python setup.py bdist_wheel
 pip install dist/*.whl
 mkdir build_artifacts
 cp dist/* build_artifacts
-cd dist && rename "s/\+\w{7}/\+stable/" *.whl && cd ..
+cd dist && rename "s/\+\w{7}/\+tester/" *.whl && cd ..
 cd build_artifacts && rename "s/^torch/torch-$(date -d "yesterday" +%Y%m%d)/" *.whl && cd ..
 mv dist/* build_artifacts
 mv build_artifacts/* ../../
