@@ -16,7 +16,7 @@ python setup.py bdist_wheel
 ls -lah dist
 mkdir build_artifacts
 cp dist/* build_artifacts
-cd dist && rename "s/\+\w{7}/\+nightly/" *.whl && cd ..
+cd dist && rename "s/\+\w{7}/\+mkldnn/" *.whl && cd ..
 cd build_artifacts && rename "s/^torch_xla/torch_xla-$(date -d "yesterday" +%Y%m%d)/" *.whl && cd ..
 mv dist/* build_artifacts
 mv build_artifacts/* ../../../

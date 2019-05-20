@@ -45,7 +45,7 @@ sudo apt-get -y --purge autoremove mpi-default-dev
 sudo apt-get -y --purge autoremove openmpi-bin
 
 ## Install required packages for build
-sudo apt-get -y install python-pip git libopenblas-dev
+sudo apt-get -y install python-pip git
 sudo pip install --upgrade google-api-python-client
 sudo pip install --upgrade oauth2client
 
@@ -62,6 +62,7 @@ conda create --name pytorch python=3.5 anaconda
 source activate pytorch
 export CMAKE_PREFIX_PATH="$(dirname $(which conda))/../"
 conda install -y numpy pyyaml setuptools cmake cffi typing
+conda install -y -c mingfeima mkldnn
 
 # Disable MKL because it's a clusterfsck
 # conda install -y mkl mkl-include
@@ -86,12 +87,12 @@ fi
 # Apply patches to PT which are required by the XLA support.
 xla/scripts/apply_patches.sh
 # Build and install torch wheel and collect artifact
-export NO_CUDA=1 NO_MKLDNN=1
+export NO_CUDA=1
 python setup.py bdist_wheel
 pip install dist/*.whl
 mkdir build_artifacts
 cp dist/* build_artifacts
-cd dist && rename "s/\+\w{7}/\+stable/" *.whl && cd ..
+cd dist && rename "s/\+\w{7}/\+mkldnn/" *.whl && cd ..
 cd build_artifacts && rename "s/^torch/torch-$(date -d "yesterday" +%Y%m%d)/" *.whl && cd ..
 mv dist/* build_artifacts
 mv build_artifacts/* ../../
