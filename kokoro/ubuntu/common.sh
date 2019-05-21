@@ -65,7 +65,7 @@ conda install -y numpy pyyaml setuptools cmake cffi typing
 conda install -y -c mingfeima mkldnn
 
 # Disable MKL because it's a clusterfsck
-# conda install -y mkl mkl-include
+conda install -y mkl mkl-include
 
 sudo /sbin/ldconfig "${HOME}/anaconda3/lib/" "${HOME}/anaconda3/envs/pytorch/lib"
 
