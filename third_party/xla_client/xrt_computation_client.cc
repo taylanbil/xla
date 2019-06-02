@@ -152,6 +152,17 @@ string StripPrefix(const string& value, const string& prefix) {
   return value.find(prefix) == 0 ? value.substr(prefix.size()) : value;
 }
 
+tensorflow::DeviceNameUtils::ParsedName ParseFullXrtDevice(
+    const string& device) {
+  tensorflow::DeviceNameUtils::ParsedName parsed_device;
+  XLA_CHECK(
+      tensorflow::DeviceNameUtils::ParseFullName(device, &parsed_device) &&
+      parsed_device.has_job && parsed_device.has_task && parsed_device.has_id &&
+      parsed_device.has_type)
+      << device;
+  return parsed_device;
+}
+
 }  // namespace
 
 void XrtComputationClient::XrtData::Assign(const Data& data) {
@@ -995,12 +1006,8 @@ void XrtComputationClient::ReleaseXrtComputation(
 
 std::pair<XrtComputationClient::Worker, string>
 XrtComputationClient::GetWorkerForXrtDevice(const string& xrt_device) const {
-  tensorflow::DeviceNameUtils::ParsedName parsed_device;
-  XLA_CHECK(
-      tensorflow::DeviceNameUtils::ParseFullName(xrt_device, &parsed_device) &&
-      parsed_device.has_job && parsed_device.has_task)
-      << xrt_device;
-
+  tensorflow::DeviceNameUtils::ParsedName parsed_device =
+      ParseFullXrtDevice(xrt_device);
   auto worker_hostport =
       options_.workers_map.find(Worker(parsed_device.job, parsed_device.task));
   XLA_CHECK(worker_hostport != options_.workers_map.end()) << xrt_device;
@@ -1060,12 +1067,8 @@ void XrtComputationClient::InitializeDevices() {
   std::set<Worker> tpu_workers;
   for (const auto& device : options_.devices) {
     const string& xrt_device = TorchDeviceToXrtDevice(device);
-    tensorflow::DeviceNameUtils::ParsedName parsed_device;
-    XLA_CHECK(tensorflow::DeviceNameUtils::ParseFullName(xrt_device,
-                                                         &parsed_device) &&
-              parsed_device.has_job && parsed_device.has_task &&
-              parsed_device.has_id && parsed_device.has_type)
-        << xrt_device;
+    tensorflow::DeviceNameUtils::ParsedName parsed_device =
+        ParseFullXrtDevice(xrt_device);
     if (parsed_device.type == "TPU") {
       tpu_workers.emplace(parsed_device.job, parsed_device.task);
     }
@@ -1085,12 +1088,8 @@ void XrtComputationClient::InitializeDevices() {
   }
 
   for (const auto& dev_target : options_.global_device_map) {
-    tensorflow::DeviceNameUtils::ParsedName parsed_device;
-    XLA_CHECK(tensorflow::DeviceNameUtils::ParseFullName(dev_target.second,
-                                                         &parsed_device) &&
-              parsed_device.has_job && parsed_device.has_task &&
-              parsed_device.has_id && parsed_device.has_type)
-        << dev_target.second;
+    tensorflow::DeviceNameUtils::ParsedName parsed_device =
+        ParseFullXrtDevice(dev_target.second);
     if (parsed_device.type != "TPU") {
       continue;
     }
@@ -1112,6 +1111,38 @@ void XrtComputationClient::InitializeDevices() {
     device_mesh_coords_.insert(
         {dev_target.second, std::move(device_mesh_coords)});
   }
+  if (topology_proto != nullptr && options_.workers_map.size() > 1) {
+    CreateMeshService(*topology_proto);
+  }
+}
+
+void XrtComputationClient::CreateMeshService(
+    const tensorflow::tpu::TopologyProto& topology_proto) {
+  service::grpc::Config config;
+  config.mutable_proto()->CopyFrom(topology_proto);
+
+  std::map<Worker, std::vector<string>> workers_devices;
+  for (const auto& dev_target : options_.global_device_map) {
+    tensorflow::DeviceNameUtils::ParsedName parsed_device =
+        ParseFullXrtDevice(dev_target.second);
+    workers_devices[Worker(parsed_device.job, parsed_device.task)].push_back(
+        dev_target.first);
+  }
+  for (auto& worker_address : options_.workers_map) {
+    service::grpc::Worker* worker = config.add_workers();
+    worker->set_name(worker_address.first.name);
+    worker->set_task_no(worker_address.first.task_no);
+    worker->set_address(worker_address.second);
+    for (auto& device : workers_devices[worker_address.first]) {
+      *worker->add_devices() = device;
+    }
+  }
+
+  string mesh_service_address =
+      sys_util::GetEnvString("XLA_MESH_SERVICE_ADDRESS", "localhost:53010");
+  TF_LOG(INFO) << "Creating mesh service bound to " << mesh_service_address;
+  mesh_service_ = absl::make_unique<service::MeshService>(mesh_service_address,
+                                                          std::move(config));
 }
 
 std::vector<ComputationClient::DataPtr>
