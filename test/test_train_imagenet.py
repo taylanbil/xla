@@ -6,12 +6,20 @@ SUPPORTED_MODELS = [
     'densenet161',
     'densenet169',
     'densenet201',
+    'googlenet',
     'inception_v3',
+    'mobilenet_v2',
     'resnet101',
     'resnet152',
     'resnet18',
     'resnet34',
     'resnet50',
+    'resnext101_32x8d',
+    'resnext50_32x4d',
+    'shufflenet_v2_x0_5',
+    'shufflenet_v2_x1_0',
+    'shufflenet_v2_x1_5',
+    'shufflenet_v2_x2_0',
     'squeezenet1_0',
     'squeezenet1_1',
     'vgg11',
@@ -20,8 +28,7 @@ SUPPORTED_MODELS = [
     'vgg13_bn',
     'vgg16',
     'vgg16_bn',
-    'vgg19',
-    'vgg19_bn'
+    'vgg19'
 ]
 
 MODEL_OPTS = {
