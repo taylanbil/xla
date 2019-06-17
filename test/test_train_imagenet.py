@@ -81,6 +81,10 @@ MODEL_PROPERTIES = {
         'img_dim': 299,
         'model_fn': lambda: torchvision.models.inception_v3(aux_logits=False)
     },
+    'googlenet': {
+        'img_dim': 224,
+        'model_fn': lambda: torchvision.models.googlenet(aux_logits=False)
+    },
     'DEFAULT': {
         'img_dim': 224,
         'model_fn': getattr(torchvision.models, FLAGS.model)
