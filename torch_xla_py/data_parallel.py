@@ -160,7 +160,7 @@ class ParallelLoader(object):
 
 class DataParallel(object):
 
-  def __init__(self, network, device_ids=None, batchdim=0, drop_last=False):
+  def __init__(self, network, device_ids=None, batchdim=0, drop_last=False, **kwargs):
     if device_ids is None:
       device_ids = xm.get_xla_supported_devices()
     self._device_ids = list(device_ids)
@@ -180,6 +180,8 @@ class DataParallel(object):
     if not self._models:
       # No XLA device, push a vanilla network in.
       self._models.append(network())
+    for key, value in kwargs.items():
+      setattr(self, key, value)
 
   def _get_model_device(self, model):
     for p in model.parameters():
@@ -206,8 +208,7 @@ class DataParallel(object):
       result.result = e
       self._handle_runner_exception(device, e)
 
-  def __call__(self, loop_fn, loader):
-    context = dict()
+  def __call__(self, loop_fn, loader, context={}):
     if not self._device_ids:
       ## This is called without XLA devices available. Run in normal mode.
       return [
