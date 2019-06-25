@@ -111,42 +111,47 @@ _FN_OUT_REGEX = []
 
 _FN_REMAP = {
     '_th_eq(Tensor, Scalar) -> Tensor':
-        FuncOpts(outfn_name='eq'),
+        FuncOpts(outfn_name='AtenXlaType::eq'),
     '_th_eq(Tensor, Tensor) -> Tensor':
-        FuncOpts(outfn_name='eq'),
+        FuncOpts(outfn_name='AtenXlaType::eq'),
     '_th_ge(Tensor, Scalar) -> Tensor':
-        FuncOpts(outfn_name='ge'),
+        FuncOpts(outfn_name='AtenXlaType::ge'),
     '_th_ge(Tensor, Tensor) -> Tensor':
-        FuncOpts(outfn_name='ge'),
+        FuncOpts(outfn_name='AtenXlaType::ge'),
     '_th_gt(Tensor, Scalar) -> Tensor':
-        FuncOpts(outfn_name='gt'),
+        FuncOpts(outfn_name='AtenXlaType::gt'),
     '_th_gt(Tensor, Tensor) -> Tensor':
-        FuncOpts(outfn_name='gt'),
+        FuncOpts(outfn_name='AtenXlaType::gt'),
     '_th_le(Tensor, Scalar) -> Tensor':
-        FuncOpts(outfn_name='le'),
+        FuncOpts(outfn_name='AtenXlaType::le'),
     '_th_le(Tensor, Tensor) -> Tensor':
-        FuncOpts(outfn_name='le'),
+        FuncOpts(outfn_name='AtenXlaType::le'),
     '_th_lt(Tensor, Scalar) -> Tensor':
-        FuncOpts(outfn_name='lt'),
+        FuncOpts(outfn_name='AtenXlaType::lt'),
     '_th_lt(Tensor, Tensor) -> Tensor':
-        FuncOpts(outfn_name='lt'),
+        FuncOpts(outfn_name='AtenXlaType::lt'),
     '_th_ne(Tensor, Scalar) -> Tensor':
-        FuncOpts(outfn_name='ne'),
+        FuncOpts(outfn_name='AtenXlaType::ne'),
     '_th_ne(Tensor, Tensor) -> Tensor':
-        FuncOpts(outfn_name='ne'),
+        FuncOpts(outfn_name='AtenXlaType::ne'),
     's__th_and(Tensor, Tensor) -> Tensor':
-        FuncOpts(outfn_name='__and__', shape_check_indices=((0, 1),)),
+        FuncOpts(
+            outfn_name='AtenXlaType::__and__', shape_check_indices=((0, 1),)),
     's__th_or(Tensor, Tensor) -> Tensor':
-        FuncOpts(outfn_name='__or__', shape_check_indices=((0, 1),)),
+        FuncOpts(
+            outfn_name='AtenXlaType::__or__', shape_check_indices=((0, 1),)),
     's__th_xor(Tensor, Tensor) -> Tensor':
-        FuncOpts(outfn_name='__xor__', shape_check_indices=((0, 1),)),
+        FuncOpts(
+            outfn_name='AtenXlaType::__xor__', shape_check_indices=((0, 1),)),
     '_s_where(Tensor, Tensor, Tensor) -> Tensor':
-        FuncOpts(outfn_name='where', shape_check_indices=(
-            (0, 1),
-            (0, 2),
-        )),
+        FuncOpts(
+            outfn_name='AtenXlaType::where',
+            shape_check_indices=(
+                (0, 1),
+                (0, 2),
+            )),
     's__th_eq(Tensor, Tensor) -> Tensor':
-        FuncOpts(outfn_name='eq', shape_check_indices=((0, 1),)),
+        FuncOpts(outfn_name='AtenXlaType::eq', shape_check_indices=((0, 1),)),
 }
 
 _TYPE_NSMAP = {
@@ -161,7 +166,7 @@ _TYPE_NSMAP = {
     'TensorOptions': 'at::TensorOptions',
     'SparseTensorRef': 'at::SparseTensorRef',
     'Device': 'c10::Device',
-    'optional': 'at::optional',
+    'optional': 'c10::optional',
     'MemoryFormat': 'at::MemoryFormat',
     'QScheme': 'at::QScheme',
     'ConstQuantizerPtr': 'at::ConstQuantizerPtr',
@@ -215,7 +220,6 @@ _CTOR_FUNCTIONS = {
     'randint': '.device(at::DeviceType::CPU)',
     'randperm': '.device(at::DeviceType::CPU)',
     'scalar_tensor': '.device(at::DeviceType::CPU)',
-    'to': '.device(at::DeviceType::CPU)',
 }
 
 _FUNCTION_OPTIONS = {
@@ -865,6 +869,7 @@ def get_xla_wrapper(fndef, ctx):
 
 def is_tensor_api(fndef):
   fndef = fndef.replace('at::', '')
+  fndef = fndef.replace('c10::Device', 'Device')
   m = re.search(r'\bTensor\b', fndef)
   return m is not None, fndef
 
