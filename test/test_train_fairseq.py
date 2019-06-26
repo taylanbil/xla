@@ -52,7 +52,7 @@ def collate_tokens_new(values, pad_idx, eos_idx=None, left_pad=False, move_eos_t
             dst[1:] = src[:-1]
         else:
             dst.copy_(src)
- 
+
     for i, v in enumerate(values):
         copy_tensor(v, res[i][size - len(v):] if left_pad else res[i][:len(v)])
     return res
@@ -60,23 +60,29 @@ def collate_tokens_new(values, pad_idx, eos_idx=None, left_pad=False, move_eos_t
 
 data_utils.collate_tokens = collate_tokens_new
 
-from fairseq import options, optim
+from fairseq import options, tasks, checkpoint_utils
+from fairseq.trainer import Trainer
+from fairseq.meters import StopwatchMeter
 
 
 def parse_args():
   # We need to control certain flags here.
   # e.g. parallelization needs to be suppressed and deferred to torch_xla flags
-  # e.g. input tensor shapes need to be controlled via 
+  # e.g. input tensor shapes need to be controlled via
   #   max_sentences, required_batch_size_multiple
   parser = options.get_training_parser()
   args = options.parse_args_and_arch(parser)
   parser = argparse.ArgumentParser(add_help=False)
   parser.add_argument('--num_cores', type=int, default=8)
-  parser.add_argument('--log_steps', type=int, default=20)
   parser.add_argument('--pad_to_length', type=int, default=64)
-  parser.add_argument('--use_gpu', action=store_true)
-  FLAGS = parser.parse_known_args()
+  parser.add_argument('--use_gpu', action='store_true')
+  FLAGS, _leftovers = parser.parse_known_args()
+  assert not set(args.__dict__.keys()).intersection(set(FLAGS.__dict__.keys()))
+  FLAGS.__dict__.update(args.__dict__)
   if not FLAGS.use_gpu:
+    if FLAGS.fp16:
+      print('suppressing "fp16"')
+      FLAGS.fp16 = False
     if FLAGS.distributed_world_size > 1:
       print('suppressing "distributed_world_size"')
       FLAGS.distributed_world_size = 1
@@ -84,7 +90,7 @@ def parse_args():
       print('suppressing "distributed_init_method"')
       FLAGS.distributed_init_method = None
     if FLAGS.max_sentences != FLAGS.required_batch_size_multiple:
-      batch_size = max(FLAGS.max_sentences, FLAGS.required_batch_size_multiple)
+      batch_size = max(filter(lambda r: r is not None, [FLAGS.max_sentences, FLAGS.required_batch_size_multiple]))
       print(
         '"max_sentences" and "required_batch_size_multiple" must be equal'
         ' to have good performance on TPUs. Using {}'.format(batch_size))
@@ -94,9 +100,6 @@ def parse_args():
       print('"max_tokens" needs to be None for better TPU performance')
       FLAGS.max_tokens = None
   return FLAGS
-
-DEVICES = xm.get_xla_supported_devices(max_devices=FLAGS.num_cores)
-FLAGS = parse_args()
 
 
 def main_tpu(args, init_distributed=False):
@@ -113,9 +116,10 @@ def main_tpu(args, init_distributed=False):
   # Build models and criteria to print some metadata
   criterion = task.build_criterion(args)
   model_parallel = dp.DataParallel(
-    lambda: task.build_model(args), device_ids=devices, drop_last=True)
+    lambda: task.build_model(args), device_ids=DEVICES, drop_last=True)
   criteria = {device: task.build_criterion(args)
               for device in model_parallel._device_ids}
+  models = dict(zip(model_parallel._device_ids, model_parallel._models))
   model, criterion = model_parallel._models[0], list(criteria.values())[0]
   print(model)
   print('| model {}, criterion {}'.format(args.arch, criterion.__class__.__name__))
@@ -123,11 +127,12 @@ def main_tpu(args, init_distributed=False):
     sum(p.numel() for p in model.parameters()),
     sum(p.numel() for p in model.parameters() if p.requires_grad),
   ))
+  trainer = Trainer(args, task, model, criterion)
+  del model, criterion
 
   # Build trainers
-  trainers = {device: Trainer(FLAGS, task, model, criterion)
+  trainers = {device: Trainer(args, task, models[device], criteria[device])
               for device in model_parallel._device_ids}
-  trainer = trainers[model]
   lr = min(trainer.get_lr() for trainer in trainers.values())
 
   # Load the latest checkpoint if one is available and restore the
@@ -140,14 +145,9 @@ def main_tpu(args, init_distributed=False):
   valid_losses = [None]
   valid_subsets = args.valid_subset.split(',')
 
-  # def build_optimizer(args, model):
-  #   params = list(filter(lambda p: p.requires_grad, model.parameters()))
-  #   return optim.build_optimizer(args, params)
-
   def train_loop_fn(model, loader, device, context):
-    trainer = trainers[model]
+    trainer = trainers[device]
     tracker = xm.RateTracker()
-    # optimizer = build_optimizer(FLAGS, model)
     for i, samples in loader:
       trainer.train_step(samples)
       xm.optimizer_step(trainer.optimizer)
@@ -156,12 +156,15 @@ def main_tpu(args, init_distributed=False):
     raise
 
   def keep_training(lr, epoch_itr, trainers):
+    return False
     max_epoch = args.max_epoch or math.inf
     max_update = args.max_update or math.inf
     lr = min(trainer.get_lr() for trainer in trainers)
     n_updates = max(trainer.get_num_updates() for trainer in trainers)
     return (lr > FLAGS.min_lr) and (epoch_itr.epoch < max_epoch) and (n_updates < max_update)
 
+  import pdb
+  pdb.set_trace()
   while keep_training(lr, epoch_itr, trainers):
     # train for one epoch
     update_freq = args.update_freq[epoch_itr.epoch - 1] \
@@ -173,7 +176,7 @@ def main_tpu(args, init_distributed=False):
         shuffle=(epoch_itr.epoch >= args.curriculum),
     )
     train_loader = iterators.GroupedIterator(itr, update_freq)
-    model_parallel(train_loop_fn, train_loader, context)
+    model_parallel(train_loop_fn, train_loader)
 
     # if not args.disable_validation and epoch_itr.epoch % args.validate_interval == 0:
     #   # TODO(taylanbil): implement validate
@@ -199,8 +202,7 @@ def main_tpu(args, init_distributed=False):
 if __name__ == '__main__':
   # override certain args so that we use XLA parallelism instead of torch.
   FLAGS = parse_args()
-  import pdb
-  pdb.set_trace()
+  DEVICES = xm.get_xla_supported_devices(max_devices=FLAGS.num_cores)
   if FLAGS.use_gpu:
     import train as fairseq_train
     fairseq_train.cli_main()
