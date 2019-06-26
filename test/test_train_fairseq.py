@@ -111,16 +111,13 @@ def main_tpu(args, init_distributed=False):
   for valid_sub_split in args.valid_subset.split(','):
     task.load_dataset(valid_sub_split, combine=True, epoch=0)
 
-  # Build model and criterion to print some metadata
+  # Build models and criteria to print some metadata
   criterion = task.build_criterion(args)
-  dp_kwargs = {
-    'args': args,
-    'trainer': trainer,
-
-  }
   model_parallel = dp.DataParallel(
-    lambda: task.build_model(args), device_ids=devices, **dp_kwargs)
-  model = model_parallel._models[0]
+    lambda: task.build_model(args), device_ids=devices)
+  criteria = {device: task.build_criterion(args) 
+              for device in model_parallel._device_ids}
+  model, criterion = model_parallel._models[0], list(criteria.values())[0]
   print(model)
   print('| model {}, criterion {}'.format(args.arch, criterion.__class__.__name__))
   print('| num. model params: {} (num. trained: {})'.format(
@@ -129,8 +126,8 @@ def main_tpu(args, init_distributed=False):
   ))
 
   # Build trainers
-  trainers = {model: Trainer(FLAGS, task, model, criterion) 
-              for model in model_parallel._models}
+  trainers = {device: Trainer(FLAGS, task, model, criterion) 
+              for device in 
   trainer = trainers[model]
   lr = min(trainer.get_lr() for trainer in trainers)
 
@@ -149,7 +146,7 @@ def main_tpu(args, init_distributed=False):
   #   return optim.build_optimizer(args, params)
 
   def train_loop_fn(model, loader, device, context):
-    trainer = context['trainer']
+    trainer = trainers[model]
     tracker = xm.RateTracker()
     # optimizer = build_optimizer(FLAGS, model)
     for i, samples in loader:
