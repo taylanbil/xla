@@ -149,6 +149,8 @@ def main_tpu(args):
       trainer.train_step(samples)
       xm.optimizer_step(trainer.optimizer)
       print('device {}, step {}: end'.format(device, i))
+      tracker.add(FLAGS.batch_size)
+    return tracker
 
   def valid_loop_fn(model, loader, device, context):
     raise
@@ -180,7 +182,10 @@ def main_tpu(args):
         shuffle=(epoch_itr.epoch >= args.curriculum),
     )
     train_loader = iterators.GroupedIterator(itr, update_freq)
-    model_parallel(train_loop_fn, train_loader)
+    trackers = model_parallel(train_loop_fn, train_loader)
+    from fairseq import pdb
+    pdb.set_trace()
+    for [
     print("Rate: {}".format(tracker.rate()))
     print(torch_xla._XLAC._xla_metrics_report())
 
