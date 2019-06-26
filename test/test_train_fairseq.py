@@ -55,7 +55,6 @@ def collate_tokens_new(values, pad_idx, eos_idx=None, left_pad=False, move_eos_t
  
     for i, v in enumerate(values):
         copy_tensor(v, res[i][size - len(v):] if left_pad else res[i][:len(v)])
-    print(res.shape)
     return res
 
 
@@ -114,8 +113,8 @@ def main_tpu(args, init_distributed=False):
   # Build models and criteria to print some metadata
   criterion = task.build_criterion(args)
   model_parallel = dp.DataParallel(
-    lambda: task.build_model(args), device_ids=devices)
-  criteria = {device: task.build_criterion(args) 
+    lambda: task.build_model(args), device_ids=devices, drop_last=True)
+  criteria = {device: task.build_criterion(args)
               for device in model_parallel._device_ids}
   model, criterion = model_parallel._models[0], list(criteria.values())[0]
   print(model)
@@ -126,10 +125,10 @@ def main_tpu(args, init_distributed=False):
   ))
 
   # Build trainers
-  trainers = {device: Trainer(FLAGS, task, model, criterion) 
-              for device in 
+  trainers = {device: Trainer(FLAGS, task, model, criterion)
+              for device in model_parallel._device_ids}
   trainer = trainers[model]
-  lr = min(trainer.get_lr() for trainer in trainers)
+  lr = min(trainer.get_lr() for trainer in trainers.values())
 
   # Load the latest checkpoint if one is available and restore the
   # corresponding train iterator
@@ -150,11 +149,6 @@ def main_tpu(args, init_distributed=False):
     tracker = xm.RateTracker()
     # optimizer = build_optimizer(FLAGS, model)
     for i, samples in loader:
-      if samples[0]['net_input']['src_tokens'].shape[0] < BATCH_SIZE:
-        # This should only happen at the last batch -- skip to avoid graph
-        # compile.
-        print('skipping last batch of the epoch')
-        continue
       trainer.train_step(samples)
       xm.optimizer_step(trainer.optimizer)
 
@@ -181,31 +175,25 @@ def main_tpu(args, init_distributed=False):
     train_loader = iterators.GroupedIterator(itr, update_freq)
     model_parallel(train_loop_fn, train_loader, context)
 
-    if not args.disable_validation and epoch_itr.epoch % args.validate_interval == 0:
-      # TODO(taylanbil): implement validate
-      valid_losses = validate(args, trainer, task, epoch_itr, valid_subsets)
-    else:
-      valid_losses = [None]
+    # if not args.disable_validation and epoch_itr.epoch % args.validate_interval == 0:
+    #   # TODO(taylanbil): implement validate
+    #   valid_losses = validate(args, trainer, task, epoch_itr, valid_subsets)
+    # else:
+    #   valid_losses = [None]
+    #
+    # # TODO(taylanbil): verify the learning rate update
+    # from fairseq import pdb
+    # pdb.set_trace()
+    # # only use first validation loss to update the learning rate
+    # lr = trainer.lr_step(epoch_itr.epoch, valid_losses[0])
+    # pdb.set_trace()
+    #
+    # # save checkpoint
+    # if epoch_itr.epoch % args.save_interval == 0:
+    #   checkpoint_utils.save_checkpoint(args, trainer, epoch_itr, valid_losses[0])
 
-    # TODO(taylanbil): verify the learning rate update
-    from fairseq import pdb
-    pdb.set_trace()
-    # only use first validation loss to update the learning rate
-    lr = trainer.lr_step(epoch_itr.epoch, valid_losses[0])
-    pdb.set_trace()
-
-    # save checkpoint
-    if epoch_itr.epoch % args.save_interval == 0:
-      checkpoint_utils.save_checkpoint(args, trainer, epoch_itr, valid_losses[0])
-
-    if ':' in getattr(args, 'data', ''):
-      # sharded data: get train iterator for next epoch
-      epoch_itr = trainer.get_train_iterator(epoch_itr.epoch)
   train_meter.stop()
   print('| done training in {:.1f} seconds'.format(train_meter.sum))
-
-
-def main_gpu(args, init_distributed=False):
 
 
 if __name__ == '__main__':
