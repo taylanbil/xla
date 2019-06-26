@@ -27,7 +27,6 @@ from fairseq.data import data_utils
 # This is reducing the number of graph recompiles
 collate_tokens_generic = data_utils.collate_tokens
 
-BATCH_SIZE, PAD_TO_LENGTH = None, None
 
 def collate_tokens_new(values, pad_idx, eos_idx=None, left_pad=False, move_eos_to_beginning=False):
     """
@@ -149,7 +148,7 @@ def main_tpu(args):
       trainer.train_step(samples)
       xm.optimizer_step(trainer.optimizer)
       print('device {}, step {}: end'.format(device, i))
-      tracker.add(FLAGS.batch_size)
+      tracker.add(BATCH_SIZE)
     return tracker
 
   def valid_loop_fn(model, loader, device, context):
@@ -183,10 +182,9 @@ def main_tpu(args):
     )
     train_loader = iterators.GroupedIterator(itr, update_freq)
     trackers = model_parallel(train_loop_fn, train_loader)
-    from fairseq import pdb
-    pdb.set_trace()
-    for [
-    print("Rate: {}".format(tracker.rate()))
+    print('Tracker Rates:')
+    for tracker in trackers:
+        print('\tRate={:.2f}'.format(tracker.rate()))
     print(torch_xla._XLAC._xla_metrics_report())
 
     # if not args.disable_validation and epoch_itr.epoch % args.validate_interval == 0:
