@@ -1,15 +1,16 @@
 """TODO(taylanbil): DO NOT SUBMIT without one-line documentation for test_train_fairseq.
 
-TODO(taylanbil): DO NOT SUBMIT without a detailed description of test_train_fairseq.
+TODO(taylanbil): DO NOT SUBMIT without a detailed description of
+test_train_fairseq.
 """
-
 
 import argparse
 import sys
 import os
 import math
 
-pytorch_folder = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(sys.argv[0]))))
+pytorch_folder = os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(sys.argv[0]))))
 xla_folder = os.path.join(pytorch_folder, 'xla')
 fairseq_folder = os.path.join(pytorch_folder, 'fairseq')
 sys.path.insert(0, xla_folder)
@@ -28,33 +29,39 @@ from fairseq.data import data_utils
 collate_tokens_generic = data_utils.collate_tokens
 
 
-def collate_tokens_new(values, pad_idx, eos_idx=None, left_pad=False, move_eos_to_beginning=False):
-    """
-    Copied over from fairseq.data_utils, and modified so that
-    num_columns in the output tensor is not too variable.
-    """
-    # correcting columns
-    global PAD_TO_LENGTH
-    size = max(v.size(0) for v in values)
-    if size > PAD_TO_LENGTH:
-        print('I had to change PAD_TO_LENGTH from {} to {}, this is going to trigger graph recompiles'.format(PAD_TO_LENGTH, size))
-        PAD_TO_LENGTH = size
-    size = PAD_TO_LENGTH
-    # done correcting
-    res = values[0].new(len(values), size).fill_(pad_idx)
+def collate_tokens_new(values,
+                       pad_idx,
+                       eos_idx=None,
+                       left_pad=False,
+                       move_eos_to_beginning=False):
+  """
+  Copied over from fairseq.data_utils, and modified so that
+  num_columns in the output tensor is not too variable.
+  """
+  # correcting columns
+  global PAD_TO_LENGTH
+  size = max(v.size(0) for v in values)
+  if size > PAD_TO_LENGTH:
+    print(
+        'I had to change PAD_TO_LENGTH from {} to {}, this is going to trigger graph recompiles'
+        .format(PAD_TO_LENGTH, size))
+    PAD_TO_LENGTH = size
+  size = PAD_TO_LENGTH
+  # done correcting
+  res = values[0].new(len(values), size).fill_(pad_idx)
 
-    def copy_tensor(src, dst):
-        assert dst.numel() == src.numel()
-        if move_eos_to_beginning:
-            assert src[-1] == eos_idx
-            dst[0] = eos_idx
-            dst[1:] = src[:-1]
-        else:
-            dst.copy_(src)
+  def copy_tensor(src, dst):
+    assert dst.numel() == src.numel()
+    if move_eos_to_beginning:
+      assert src[-1] == eos_idx
+      dst[0] = eos_idx
+      dst[1:] = src[:-1]
+    else:
+      dst.copy_(src)
 
-    for i, v in enumerate(values):
-        copy_tensor(v, res[i][size - len(v):] if left_pad else res[i][:len(v)])
-    return res
+  for i, v in enumerate(values):
+    copy_tensor(v, res[i][size - len(v):] if left_pad else res[i][:len(v)])
+  return res
 
 
 data_utils.collate_tokens = collate_tokens_new
@@ -86,10 +93,11 @@ def parse_args():
       print('suppressing "distributed_init_method"')
       FLAGS.distributed_init_method = None
     if FLAGS.max_sentences != FLAGS.required_batch_size_multiple:
-      batch_size = max(filter(lambda r: r is not None, [FLAGS.max_sentences, FLAGS.required_batch_size_multiple]))
-      print(
-        '"max_sentences" and "required_batch_size_multiple" must be equal'
-        ' to have good performance on TPUs. Using {}'.format(batch_size))
+      batch_size = max(
+          filter(lambda r: r is not None,
+                 [FLAGS.max_sentences, FLAGS.required_batch_size_multiple]))
+      print('"max_sentences" and "required_batch_size_multiple" must be equal'
+            ' to have good performance on TPUs. Using {}'.format(batch_size))
       FLAGS.max_sentences = batch_size
       FLAGS.required_batch_size_multiple = batch_size
     if FLAGS.max_tokens is not None:
@@ -109,23 +117,30 @@ def prepare_task(args):
   # Build models and criteria to print some metadata
   criterion = task.build_criterion(args)
   model_parallel = dp.DataParallel(
-    lambda: task.build_model(args), device_ids=DEVICES, drop_last=True)
-  criteria = {device: task.build_criterion(args)
-              for device in model_parallel._device_ids}
-  models = {model_parallel._get_model_device(model): model
-          for model in model_parallel._models}
+      lambda: task.build_model(args), device_ids=DEVICES, drop_last=True)
+  criteria = {
+      device: task.build_criterion(args)
+      for device in model_parallel._device_ids
+  }
+  models = {
+      model_parallel._get_model_device(model): model
+      for model in model_parallel._models
+  }
   model, criterion = model_parallel._models[0], list(criteria.values())[0]
   print(model)
-  print('| model {}, criterion {}'.format(args.arch, criterion.__class__.__name__))
+  print('| model {}, criterion {}'.format(args.arch,
+                                          criterion.__class__.__name__))
   print('| num. model params: {} (num. trained: {})'.format(
-    sum(p.numel() for p in model.parameters()),
-    sum(p.numel() for p in model.parameters() if p.requires_grad),
+      sum(p.numel() for p in model.parameters()),
+      sum(p.numel() for p in model.parameters() if p.requires_grad),
   ))
   del model, criterion
 
   # Build trainers
-  trainers = {device: Trainer(args, task, models[device], criteria[device])
-              for device in model_parallel._device_ids}
+  trainers = {
+      device: Trainer(args, task, models[device], criteria[device])
+      for device in model_parallel._device_ids
+  }
   trainer = trainers[DEVICES[0]]
   lr = trainer.get_lr()
 
@@ -145,14 +160,61 @@ def main_tpu(args):
     tracker = xm.RateTracker()
     for i, samples in loader:
       print('device {}, step {}: begin'.format(device, i))
-      trainer.train_step(samples)
+      log_output = trainer.train_step(samples)
       xm.optimizer_step(trainer.optimizer)
       print('device {}, step {}: end'.format(device, i))
       tracker.add(BATCH_SIZE)
-    return tracker
+    return tracker, log_output
 
   def valid_loop_fn(model, loader, device, context):
     raise
+
+  #
+  # def validate(args, trainers, task, epoch_itr, valid_subsets):
+  #   valid_losses = []
+  #   for subset in subsets:
+  #     # Initialize data iterator
+  #     itr = task.get_batch_iterator(
+  #       dataset=task.dataset(subset),
+  #       max_tokens=args.max_tokens,
+  #       max_sentences=args.max_sentences_valid,
+  #       max_positions=utils.resolve_max_positions(
+  #         task.max_positions(),
+  #         trainer.get_model().max_positions(),  # FIXME
+  #       ),
+  #       ignore_invalid_inputs=args.skip_invalid_size_inputs_valid_test,
+  #       required_batch_size_multiple=args.required_batch_size_multiple,
+  #       seed=args.seed,
+  #       num_workers=args.num_workers).next_epoch_itr(shuffle=False)
+  #     progress = progress_bar.build_progress_bar(
+  #           args, itr, epoch_itr.epoch,
+  #           prefix='valid on \'{}\' subset'.format(subset),
+  #           no_progress_bar='simple'
+  #       )
+  #
+  #     # reset validation loss meters
+  #     for k in ['valid_loss', 'valid_nll_loss']:
+  #       meter = trainer.get_meter(k)
+  #       if meter is not None:
+  #         meter.reset()
+  #     extra_meters = collections.defaultdict(lambda: AverageMeter())
+  #
+  #     for sample in progress:
+  #       log_output = trainer.valid_step(sample)
+  #
+  #             for k, v in log_output.items():
+  #                 if k in ['loss', 'nll_loss', 'ntokens', 'nsentences', 'sample_size']:
+  #                     continue
+  #                 extra_meters[k].update(v)
+  #
+  #         # log validation stats
+  #         stats = get_valid_stats(trainer)
+  #         for k, meter in extra_meters.items():
+  #             stats[k] = meter.avg
+  #         progress.print(stats, tag=subset, step=trainer.get_num_updates())
+  #
+  #         valid_losses.append(stats['loss'].avg)
+  #     return valid_losses
 
   def keep_training(lr, epoch_itr, trainers):
     # Train until the learning rate gets too small
@@ -160,39 +222,47 @@ def main_tpu(args):
     max_update = args.max_update or math.inf
     lr = min(trainer.get_lr() for trainer in trainers.values())
     n_updates = max(trainer.get_num_updates() for trainer in trainers.values())
-    return (lr > FLAGS.min_lr) and (epoch_itr.epoch < max_epoch) and (n_updates < max_update)
+    print(lr > FLAGS.min_lr)
+    print(epoch_itr.epoch < max_epoch)
+    print(n_updates < max_update)
+    return (lr > FLAGS.min_lr) and (epoch_itr.epoch <
+                                    max_epoch) and (n_updates < max_update)
 
-  print("Args\n---------")
+  print('Args\n---------')
   print(args)
 
   task, trainers, model_parallel, epoch_itr, lr = prepare_task(args)
 
+  # TRAINING
   train_meter = StopwatchMeter()
   train_meter.start()
-  valid_losses = [None]
   valid_subsets = args.valid_subset.split(',')
   while keep_training(lr, epoch_itr, trainers):
-    update_freq = args.update_freq[epoch_itr.epoch - 1] \
-        if epoch_itr.epoch <= len(args.update_freq) else args.update_freq[-1]
+    print('Epoch {}'.format(epoch_itr.epoch))
+    if epoch_itr.epoch <= len(args.update_freq):
+      update_freq = args.update_freq[epoch_itr.epoch - 1]
+    else:
+      update_freq = args.update_freq[-1]
 
     # Initialize data iterator
     itr = epoch_itr.next_epoch_itr(
-        fix_batches_to_gpus=False,
-        shuffle=(epoch_itr.epoch >= args.curriculum),
-    )
+        fix_batches_to_gpus=False, shuffle=(epoch_itr.epoch >= args.curriculum))
     train_loader = iterators.GroupedIterator(itr, update_freq)
-    trackers = model_parallel(train_loop_fn, train_loader)
+    out = model_parallel(train_loop_fn, train_loader)
+    keep_training(lr, epoch_itr, trainers)
+    import pdb
+    pdb.set_trace()
+    # TODO(taylanbil): add progress bar back in for training
     print('Tracker Rates:')
     for tracker in trackers:
-        print('\tRate={:.2f}'.format(tracker.rate()))
+      print('\tRate={:.2f}'.format(tracker.rate()))
     print(torch_xla._XLAC._xla_metrics_report())
 
-    # if not args.disable_validation and epoch_itr.epoch % args.validate_interval == 0:
-    #   # TODO(taylanbil): implement validate
-    #   valid_losses = validate(args, trainer, task, epoch_itr, valid_subsets)
-    # else:
-    #   valid_losses = [None]
-    #
+    # VALIDATION
+    valid_losses = [None]
+    if not args.disable_validation and epoch_itr.epoch % args.validate_interval == 0:
+      valid_losses = validate(args, trainers, task, epoch_itr, valid_subsets)
+
     # # TODO(taylanbil): verify the learning rate update
     # from fairseq import pdb
     # pdb.set_trace()
@@ -219,4 +289,3 @@ if __name__ == '__main__':
     DEVICES = xm.get_xla_supported_devices(max_devices=FLAGS.num_cores)
     PAD_TO_LENGTH = FLAGS.pad_to_length
     main_tpu(FLAGS)
-
