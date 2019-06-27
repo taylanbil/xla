@@ -181,15 +181,15 @@ def main_tpu(args):
       if meter is not None:
         meter.reset()
     for i, sample in loader:
-      print('device {}, step {}: begin'.format(device, i))
+      print('device {}, step {}: begin'.format(device, i), flush=True)
       log_output = trainer.valid_step(sample)
-      print('device {}, step {}: end'.format(device, i))
       for k, v in log_output.items():
         if k in ['loss', 'nll_loss', 'ntokens', 'nsentences', 'sample_size']:
           continue
       # log validation stats
       stats = fairseq_train.get_valid_stats(trainer)
       valid_losses.append(stats['loss'].avg)
+      print('device {}, step {}: end'.format(device, i), flush=True)
     return valid_losses, stats
 
   def validate(args, trainers, task, epoch_itr, subsets):
@@ -267,13 +267,14 @@ def main_tpu(args):
     print('Epoch {} Tracker Rates:'.format(epoch_itr.epoch))
     for tracker in trackers:
       print('\tRate={:.2f}'.format(tracker.rate()))
-    print(torch_xla._XLAC._xla_metrics_report())
     print('Epoch {} end'.format(epoch_itr.epoch))
+    print(torch_xla._XLAC._xla_metrics_report())
 
     # VALIDATION
     valid_losses = [None]
     if not args.disable_validation and epoch_itr.epoch % args.validate_interval == 0:
       valid_losses = validate(args, trainers, task, epoch_itr, valid_subsets)
+    print(torch_xla._XLAC._xla_metrics_report())
 
     # TODO(taylanbil): verify the learning rate update
     from fairseq import pdb
