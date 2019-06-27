@@ -67,10 +67,10 @@ def collate_tokens_new(values,
 
 data_utils.collate_tokens = collate_tokens_new
 
-from fairseq import options, tasks, checkpoint_utils, progress_bar
+from fairseq import options, tasks, checkpoint_utils, progress_bar, utils
 from fairseq.trainer import Trainer
 from fairseq.data import iterators
-from fairseq.meters import StopwatchMeter
+from fairseq.meters import StopwatchMeter, AverageMeter
 
 
 def parse_args():
@@ -162,7 +162,7 @@ def main_tpu(args):
     stats = None
     tracker = xm.RateTracker()
     for i, samples in loader:
-      if i == 3:
+      if i == 2:
         break
       print('device {}, step {}: begin'.format(device, i))
       _log_output = trainer.train_step(samples)
@@ -180,24 +180,22 @@ def main_tpu(args):
       meter = trainer.get_meter(k)
       if meter is not None:
         meter.reset()
-    extra_meters = collections.defaultdict(lambda: AverageMeter())
-    for sample in progress:
+    for i, sample in loader:
+      print('device {}, step {}: begin'.format(device, i))
       log_output = trainer.valid_step(sample)
+      print('device {}, step {}: end'.format(device, i))
       for k, v in log_output.items():
         if k in ['loss', 'nll_loss', 'ntokens', 'nsentences', 'sample_size']:
           continue
-        extra_meters[k].update(v)
       # log validation stats
       stats = fairseq_train.get_valid_stats(trainer)
-      for k, meter in extra_meters.items():
-        stats[k] = meter.avg
-      progress.print(stats, tag=subset, step=trainer.get_num_updates())
       valid_losses.append(stats['loss'].avg)
-    return valid_losses
+    return valid_losses, stats
 
-  def validate(args, trainers, task, epoch_itr, valid_subsets):
+  def validate(args, trainers, task, epoch_itr, subsets):
     valid_losses = []
     for subset in subsets:
+      print('Validating the subset "{}"'.format(subset))
       # Initialize data iterator
       itr = task.get_batch_iterator(
         dataset=task.dataset(subset),
@@ -205,7 +203,7 @@ def main_tpu(args):
         max_sentences=args.max_sentences_valid,
         max_positions=utils.resolve_max_positions(
           task.max_positions(),
-          trainer.get_model().max_positions(),  # FIXME
+          trainer.get_model().max_positions(),
         ),
         ignore_invalid_inputs=args.skip_invalid_size_inputs_valid_test,
         required_batch_size_multiple=args.required_batch_size_multiple,
@@ -216,8 +214,12 @@ def main_tpu(args):
             prefix='valid on \'{}\' subset'.format(subset),
             no_progress_bar='simple'
         )
-      valid_losses_per_device = model_parallel(valid_loop_fn, progress)
+      valid_losses_per_device, stats_per_device = model_parallel(valid_loop_fn, progress)
       valid_losses.append(valid_losses_per_device)
+      print('validation stats on {} subset')
+      for stats in stats_per_device:
+        progress.print(
+          stats, tag=subset, step=trainer.get_num_updates())
     return valid_losses
 
   def initialize_loader_for_epoch(args, epoch_itr):
@@ -244,7 +246,8 @@ def main_tpu(args):
             (n_updates < max_update))
 
   print('Args\n---------')
-  print(args)
+  for key, val in args.__dict__.items():
+    print("\t{} {}".format(key, val))
 
   task, trainers, model_parallel, epoch_itr, lr, valid_subsets = prepare_task(args)
 
@@ -259,7 +262,7 @@ def main_tpu(args):
     print('Epoch {} Training stats:'.format(epoch_itr.epoch))
     for device, trainer in trainers.items():
       stats = fairseq_train.get_training_stats(trainer)
-      print('device {}'.format(device)
+      print('device {}'.format(device))
       progress.print(stats, tag=device)
     print('Epoch {} Tracker Rates:'.format(epoch_itr.epoch))
     for tracker in trackers:
