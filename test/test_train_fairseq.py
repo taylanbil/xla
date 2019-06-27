@@ -159,6 +159,8 @@ def main_tpu(args):
     trainer = trainers[str(device)]
     tracker = xm.RateTracker()
     for i, samples in loader:
+      if i == 5:
+        break
       print('device {}, step {}: begin'.format(device, i))
       log_output = trainer.train_step(samples)
       xm.optimizer_step(trainer.optimizer)
@@ -222,11 +224,8 @@ def main_tpu(args):
     max_update = args.max_update or math.inf
     lr = min(trainer.get_lr() for trainer in trainers.values())
     n_updates = max(trainer.get_num_updates() for trainer in trainers.values())
-    print(lr > FLAGS.min_lr)
-    print(epoch_itr.epoch < max_epoch)
-    print(n_updates < max_update)
-    return (lr > FLAGS.min_lr) and (epoch_itr.epoch <
-                                    max_epoch) and (n_updates < max_update)
+    return ((lr > FLAGS.min_lr) and (epoch_itr.epoch < max_epoch) and
+            (n_updates < max_update))
 
   print('Args\n---------')
   print(args)
@@ -249,9 +248,7 @@ def main_tpu(args):
         fix_batches_to_gpus=False, shuffle=(epoch_itr.epoch >= args.curriculum))
     train_loader = iterators.GroupedIterator(itr, update_freq)
     out = model_parallel(train_loop_fn, train_loader)
-    keep_training(lr, epoch_itr, trainers)
-    import pdb
-    pdb.set_trace()
+    trackers, log_outputs = zip(*out)
     # TODO(taylanbil): add progress bar back in for training
     print('Tracker Rates:')
     for tracker in trackers:
