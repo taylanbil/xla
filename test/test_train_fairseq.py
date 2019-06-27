@@ -151,7 +151,8 @@ def prepare_task(args):
   # Load the latest checkpoint if one is available and restore the
   # corresponding train iterator
   extra_state, epoch_itr = checkpoint_utils.load_checkpoint(args, trainer)
-  return task, trainers, model_parallel, epoch_itr, lr
+  valid_subsets = args.valid_subset.split(',')
+  return task, trainers, model_parallel, epoch_itr, lr, valid_subsets
 
 
 def main_tpu(args):
@@ -172,53 +173,52 @@ def main_tpu(args):
     return tracker, stats
 
   def valid_loop_fn(model, loader, device, context):
-    raise
+    valid_losses = []
+    trainer = trainers[str(device)]
+    # reset validation loss meters
+    for k in ['valid_loss', 'valid_nll_loss']:
+      meter = trainer.get_meter(k)
+      if meter is not None:
+        meter.reset()
+    extra_meters = collections.defaultdict(lambda: AverageMeter())
+    for sample in progress:
+      log_output = trainer.valid_step(sample)
+      for k, v in log_output.items():
+        if k in ['loss', 'nll_loss', 'ntokens', 'nsentences', 'sample_size']:
+          continue
+        extra_meters[k].update(v)
+      # log validation stats
+      stats = fairseq_train.get_valid_stats(trainer)
+      for k, meter in extra_meters.items():
+        stats[k] = meter.avg
+      progress.print(stats, tag=subset, step=trainer.get_num_updates())
+      valid_losses.append(stats['loss'].avg)
+    return valid_losses
 
-  # def validate(args, trainers, task, epoch_itr, valid_subsets):
-  #   valid_losses = []
-  #   for subset in subsets:
-  #     # Initialize data iterator
-  #     itr = task.get_batch_iterator(
-  #       dataset=task.dataset(subset),
-  #       max_tokens=args.max_tokens,
-  #       max_sentences=args.max_sentences_valid,
-  #       max_positions=utils.resolve_max_positions(
-  #         task.max_positions(),
-  #         trainer.get_model().max_positions(),  # FIXME
-  #       ),
-  #       ignore_invalid_inputs=args.skip_invalid_size_inputs_valid_test,
-  #       required_batch_size_multiple=args.required_batch_size_multiple,
-  #       seed=args.seed,
-  #       num_workers=args.num_workers).next_epoch_itr(shuffle=False)
-  #     progress = progress_bar.build_progress_bar(
-  #           args, itr, epoch_itr.epoch,
-  #           prefix='valid on \'{}\' subset'.format(subset),
-  #           no_progress_bar='simple'
-  #       )
-  #
-  #     # reset validation loss meters
-  #     for k in ['valid_loss', 'valid_nll_loss']:
-  #       meter = trainer.get_meter(k)
-  #       if meter is not None:
-  #         meter.reset()
-  #     extra_meters = collections.defaultdict(lambda: AverageMeter())
-  #
-  #     for sample in progress:
-  #       log_output = trainer.valid_step(sample)
-  #
-  #             for k, v in log_output.items():
-  #                 if k in ['loss', 'nll_loss', 'ntokens', 'nsentences', 'sample_size']:
-  #                     continue
-  #                 extra_meters[k].update(v)
-  #
-  #         # log validation stats
-  #         stats = get_valid_stats(trainer)
-  #         for k, meter in extra_meters.items():
-  #             stats[k] = meter.avg
-  #         progress.print(stats, tag=subset, step=trainer.get_num_updates())
-  #
-  #         valid_losses.append(stats['loss'].avg)
-  #     return valid_losses
+  def validate(args, trainers, task, epoch_itr, valid_subsets):
+    valid_losses = []
+    for subset in subsets:
+      # Initialize data iterator
+      itr = task.get_batch_iterator(
+        dataset=task.dataset(subset),
+        max_tokens=args.max_tokens,
+        max_sentences=args.max_sentences_valid,
+        max_positions=utils.resolve_max_positions(
+          task.max_positions(),
+          trainer.get_model().max_positions(),  # FIXME
+        ),
+        ignore_invalid_inputs=args.skip_invalid_size_inputs_valid_test,
+        required_batch_size_multiple=args.required_batch_size_multiple,
+        seed=args.seed,
+        num_workers=args.num_workers).next_epoch_itr(shuffle=False)
+      progress = progress_bar.build_progress_bar(
+            args, itr, epoch_itr.epoch,
+            prefix='valid on \'{}\' subset'.format(subset),
+            no_progress_bar='simple'
+        )
+      valid_losses_per_device = model_parallel(valid_loop_fn, progress)
+      valid_losses.append(valid_losses_per_device)
+    return valid_losses
 
   def initialize_loader_for_epoch(args, epoch_itr):
     if epoch_itr.epoch <= len(args.update_freq):
@@ -246,12 +246,11 @@ def main_tpu(args):
   print('Args\n---------')
   print(args)
 
-  task, trainers, model_parallel, epoch_itr, lr = prepare_task(args)
+  task, trainers, model_parallel, epoch_itr, lr, valid_subsets = prepare_task(args)
 
   # TRAINING
   train_meter = StopwatchMeter()
   train_meter.start()
-  valid_subsets = args.valid_subset.split(',')
   while keep_training(lr, epoch_itr, trainers):
     print('Epoch {} begin'.format(epoch_itr.epoch))
     progress = initialize_loader_for_epoch(args, epoch_itr)
@@ -273,16 +272,16 @@ def main_tpu(args):
     if not args.disable_validation and epoch_itr.epoch % args.validate_interval == 0:
       valid_losses = validate(args, trainers, task, epoch_itr, valid_subsets)
 
-    # # TODO(taylanbil): verify the learning rate update
-    # from fairseq import pdb
-    # pdb.set_trace()
-    # # only use first validation loss to update the learning rate
-    # lr = trainer.lr_step(epoch_itr.epoch, valid_losses[0])
-    # pdb.set_trace()
-    #
-    # # save checkpoint
-    # if epoch_itr.epoch % args.save_interval == 0:
-    #   checkpoint_utils.save_checkpoint(args, trainer, epoch_itr, valid_losses[0])
+    # TODO(taylanbil): verify the learning rate update
+    from fairseq import pdb
+    pdb.set_trace()
+    # only use first validation loss to update the learning rate
+    lr = trainer.lr_step(epoch_itr.epoch, valid_losses[0])
+    pdb.set_trace()
+
+    # save checkpoint
+    if epoch_itr.epoch % args.save_interval == 0:
+      checkpoint_utils.save_checkpoint(args, trainer, epoch_itr, valid_losses[0])
 
   train_meter.stop()
   print('| done training in {:.1f} seconds'.format(train_meter.sum))
