@@ -173,6 +173,7 @@ def main_tpu(args):
     return tracker, stats
 
   def valid_loop_fn(model, loader, device, context):
+    from datetime import datetime
     valid_losses = []
     trainer = trainers[str(device)]
     # reset validation loss meters
@@ -180,8 +181,10 @@ def main_tpu(args):
       meter = trainer.get_meter(k)
       if meter is not None:
         meter.reset()
+    from fairseq import pdb
+    pdb.set_trace()
     for i, sample in loader:
-      print('device {}, step {}: begin'.format(device, i), flush=True)
+      print('device {}, step {}: begin{}'.format(device, i, datetime.now()), flush=True)
       log_output = trainer.valid_step(sample)
       for k, v in log_output.items():
         if k in ['loss', 'nll_loss', 'ntokens', 'nsentences', 'sample_size']:
@@ -189,7 +192,7 @@ def main_tpu(args):
       # log validation stats
       stats = fairseq_train.get_valid_stats(trainer)
       valid_losses.append(stats['loss'].avg)
-      print('device {}, step {}: end'.format(device, i), flush=True)
+      print('device {}, step {}: end {}'.format(device, i, datetime.now()), flush=True)
     return valid_losses, stats
 
   def validate(args, trainers, task, epoch_itr, subsets):
@@ -245,9 +248,10 @@ def main_tpu(args):
     return ((lr > FLAGS.min_lr) and (epoch_itr.epoch < max_epoch) and
             (n_updates < max_update))
 
-  print('Args\n---------')
+  print('Args')
   for key, val in args.__dict__.items():
     print("\t{} {}".format(key, val))
+  print('---------')
 
   task, trainers, model_parallel, epoch_itr, lr, valid_subsets = prepare_task(args)
 
