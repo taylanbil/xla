@@ -67,7 +67,7 @@ def collate_tokens_new(values,
 
 data_utils.collate_tokens = collate_tokens_new
 
-from fairseq import options, tasks, checkpoint_utils
+from fairseq import options, tasks, checkpoint_utils, progress_bar
 from fairseq.trainer import Trainer
 from fairseq.data import iterators
 from fairseq.meters import StopwatchMeter
@@ -158,21 +158,22 @@ def main_tpu(args):
 
   def train_loop_fn(model, loader, device, context):
     trainer = trainers[str(device)]
+    stats = None
     tracker = xm.RateTracker()
     for i, samples in loader:
-      if i == 5:
+      if i == 3:
         break
       print('device {}, step {}: begin'.format(device, i))
-      log_output = trainer.train_step(samples)
+      _log_output = trainer.train_step(samples)
       xm.optimizer_step(trainer.optimizer)
       print('device {}, step {}: end'.format(device, i))
       tracker.add(BATCH_SIZE)
-    return tracker, log_output
+    stats = fairseq_train.get_training_stats(trainer)
+    return tracker, stats
 
   def valid_loop_fn(model, loader, device, context):
     raise
 
-  #
   # def validate(args, trainers, task, epoch_itr, valid_subsets):
   #   valid_losses = []
   #   for subset in subsets:
@@ -219,6 +220,20 @@ def main_tpu(args):
   #         valid_losses.append(stats['loss'].avg)
   #     return valid_losses
 
+  def initialize_loader_for_epoch(args, epoch_itr):
+    if epoch_itr.epoch <= len(args.update_freq):
+      update_freq = args.update_freq[epoch_itr.epoch - 1]
+    else:
+      update_freq = args.update_freq[-1]
+
+    # Initialize data iterator
+    itr = epoch_itr.next_epoch_itr(
+        fix_batches_to_gpus=False, shuffle=(epoch_itr.epoch >= args.curriculum))
+    itr = iterators.GroupedIterator(itr, update_freq)
+    progress = progress_bar.build_progress_bar(
+      args, itr, epoch_itr.epoch, no_progress_bar='simple')
+    return progress
+
   def keep_training(lr, epoch_itr, trainers):
     # Train until the learning rate gets too small
     max_epoch = args.max_epoch or math.inf
@@ -238,29 +253,20 @@ def main_tpu(args):
   train_meter.start()
   valid_subsets = args.valid_subset.split(',')
   while keep_training(lr, epoch_itr, trainers):
-    print('Epoch {}'.format(epoch_itr.epoch))
-    if epoch_itr.epoch <= len(args.update_freq):
-      update_freq = args.update_freq[epoch_itr.epoch - 1]
-    else:
-      update_freq = args.update_freq[-1]
-
-    # Initialize data iterator
-    itr = epoch_itr.next_epoch_itr(
-        fix_batches_to_gpus=False, shuffle=(epoch_itr.epoch >= args.curriculum))
-    itr = iterators.GroupedIterator(itr, update_freq)
-    # TODO(taylanbil): add progress bar back in for training
-    progress = progress_bar.build_progress_bar(
-        args, itr, epoch_itr.epoch, no_progress_bar='simple',
-    )
+    print('Epoch {} begin'.format(epoch_itr.epoch))
+    progress = initialize_loader_for_epoch(args, epoch_itr)
     out = model_parallel(train_loop_fn, progress)
-    for trainer in trainers:
-      stats = get_training_stats(trainer)
-    trackers, log_outputs = zip(*out)
-    # TODO(taylanbil): add progress bar back in for training
-    print('Tracker Rates:')
+    trackers, stats_ = zip(*out)
+    print('Epoch {} Training stats:'.format(epoch_itr.epoch))
+    for device, trainer in trainers.items():
+      stats = fairseq_train.get_training_stats(trainer)
+      print('device {}'.format(device)
+      progress.print(stats, tag=device)
+    print('Epoch {} Tracker Rates:'.format(epoch_itr.epoch))
     for tracker in trackers:
       print('\tRate={:.2f}'.format(tracker.rate()))
     print(torch_xla._XLAC._xla_metrics_report())
+    print('Epoch {} end'.format(epoch_itr.epoch))
 
     # VALIDATION
     valid_losses = [None]
