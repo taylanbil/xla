@@ -26,7 +26,8 @@ import torch_xla_py.xla_model as xm
 from fairseq.data import data_utils
 # Overwriting collate_tokens to guarantee constant size input tensors
 # This is reducing the number of graph recompiles
-collate_tokens_generic = data_utils.collate_tokens
+collate_tokens_gpu = data_utils.collate_tokens
+import train as fairseq_train
 
 
 def collate_tokens_new(values,
@@ -246,8 +247,14 @@ def main_tpu(args):
     # Initialize data iterator
     itr = epoch_itr.next_epoch_itr(
         fix_batches_to_gpus=False, shuffle=(epoch_itr.epoch >= args.curriculum))
-    train_loader = iterators.GroupedIterator(itr, update_freq)
-    out = model_parallel(train_loop_fn, train_loader)
+    itr = iterators.GroupedIterator(itr, update_freq)
+    # TODO(taylanbil): add progress bar back in for training
+    progress = progress_bar.build_progress_bar(
+        args, itr, epoch_itr.epoch, no_progress_bar='simple',
+    )
+    out = model_parallel(train_loop_fn, progress)
+    for trainer in trainers:
+      stats = get_training_stats(trainer)
     trackers, log_outputs = zip(*out)
     # TODO(taylanbil): add progress bar back in for training
     print('Tracker Rates:')
@@ -279,7 +286,7 @@ if __name__ == '__main__':
   # override certain args so that we use XLA parallelism instead of torch.
   FLAGS = parse_args()
   if FLAGS.use_gpu:
-    import train as fairseq_train
+    data_utils.collate_tokens = collate_tokens_gpu
     fairseq_train.cli_main()
   else:
     BATCH_SIZE = FLAGS.max_sentences
