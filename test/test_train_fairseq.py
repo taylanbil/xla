@@ -184,7 +184,7 @@ def main_tpu(args):
     from fairseq import pdb
     pdb.set_trace()
     for i, sample in loader:
-      print('device {}, step {}: begin{}'.format(device, i, datetime.now()), flush=True)
+      print('device {}, step {}: begin {}'.format(device, i, datetime.now()), flush=True)
       log_output = trainer.valid_step(sample)
       for k, v in log_output.items():
         if k in ['loss', 'nll_loss', 'ntokens', 'nsentences', 'sample_size']:
@@ -193,6 +193,11 @@ def main_tpu(args):
       stats = fairseq_train.get_valid_stats(trainer)
       valid_losses.append(stats['loss'].avg)
       print('device {}, step {}: end {}'.format(device, i, datetime.now()), flush=True)
+      metricsreport = torch_xla._XLAC._xla_metrics_report().split('\n')
+      for i, line in enumerate(metricsreport):
+        if line.endswith('CompileTime'):
+          print('{} compiles'.format(metricsreport[i+1]))
+          break
     return valid_losses, stats
 
   def validate(args, trainers, task, epoch_itr, subsets):
