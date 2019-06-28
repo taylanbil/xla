@@ -163,18 +163,15 @@ def main_tpu(args):
     stats = None
     tracker = xm.RateTracker()
     for i, samples in loader:
-      if i == 2:
-        break
-      print('device {}, step {}: begin'.format(device, i))
+      print('training/ device {}, step {}: begin'.format(device, i))
       _log_output = trainer.train_step(samples)
       xm.optimizer_step(trainer.optimizer)
-      print('device {}, step {}: end'.format(device, i))
+      print('training/ device {}, step {}: end'.format(device, i))
       tracker.add(BATCH_SIZE)
     stats = fairseq_train.get_training_stats(trainer)
     return tracker, stats
 
   def valid_loop_fn(model, loader, device, context):
-    valid_losses = []
     trainer = trainers[str(device)]
     # reset validation loss meters
     for k in ['valid_loss', 'valid_nll_loss']:
@@ -183,24 +180,17 @@ def main_tpu(args):
         meter.reset()
     extra_meters = collections.defaultdict(lambda: AverageMeter())
     for i, sample in loader:
-      print('device {}, step {} begin'.format(device, i), flush=True)
+      print('validation/ device {}, step {} begin'.format(device, i), flush=True)
       log_output = trainer.valid_step(sample)
       for k, v in log_output.items():
         if k in ['loss', 'nll_loss', 'ntokens', 'nsentences', 'sample_size']:
           continue
         extra_meters[k].update(v)
-      print('device {}, step {} end'.format(device, i), flush=True)
-      #metricsreport = torch_xla._XLAC._xla_metrics_report().split('\n')
-      #for i, line in enumerate(metricsreport):
-      #  if line.endswith('CompileTime'):
-      #    print('{} compiles'.format(metricsreport[i+1]))
-      #    break
-      #print('\n'.join(metricsreport))
+      print('validation/ device {}, step {} end'.format(device, i), flush=True)
     stats = fairseq_train.get_valid_stats(trainer)
     for k, meter in extra_meters.items():
       stats[k] = meter.avg
-    valid_losses.append(stats['loss'].avg)
-    return valid_losses, stats
+    return stats
 
   def validate(args, trainers, task, epoch_itr, subsets):
     valid_losses = []
@@ -224,14 +214,13 @@ def main_tpu(args):
             prefix='valid on \'{}\' subset'.format(subset),
             no_progress_bar='simple'
         )
-      valid_losses_per_device, stats_per_device = model_parallel(valid_loop_fn, progress)
-      valid_losses.append(valid_losses_per_device)
-      print('validation stats on {} subset')
+      stats_per_device = model_parallel(valid_loop_fn, progress)
+      valid_losses.append([stats['loss'].avg for stats in stats_per_device])
+      print('validation stats on subset "{}"'.format(subset))
+      trainer = trainers[DEVICES[0]]
       for stats in stats_per_device:
         progress.print(
           stats, tag=subset, step=trainer.get_num_updates())
-      from fairseq import pdb
-      pdb.set_trace()
     return valid_losses
 
   def initialize_loader_for_epoch(args, epoch_itr):
@@ -268,39 +257,51 @@ def main_tpu(args):
   train_meter.start()
   while keep_training(lr, epoch_itr, trainers):
     # TRAINING
-    #print('Epoch {} begin'.format(epoch_itr.epoch))
-    #progress = initialize_loader_for_epoch(args, epoch_itr)
-    #out = model_parallel(train_loop_fn, progress)
-    #trackers, stats_ = zip(*out)
-    #print('Epoch {} Training stats:'.format(epoch_itr.epoch))
-    #for device, trainer in trainers.items():
-      #stats = fairseq_train.get_training_stats(trainer)
-      #print('device {}'.format(device))
-      #progress.print(stats, tag=device)
-    #print('Epoch {} Tracker Rates:'.format(epoch_itr.epoch))
-    #for tracker in trackers:
-      #print('\tRate={:.2f}'.format(tracker.rate()))
-    #print('Epoch {} end'.format(epoch_itr.epoch))
-    #print(torch_xla._XLAC._xla_metrics_report())
+    print('Epoch {} begin'.format(epoch_itr.epoch))
+    progress = initialize_loader_for_epoch(args, epoch_itr)
+    out = model_parallel(train_loop_fn, progress)
+    trackers, stats_ = zip(*out)
+    print('Epoch {} Training stats:'.format(epoch_itr.epoch))
+    for device, trainer in trainers.items():
+      stats = fairseq_train.get_training_stats(trainer)
+      print('device {}'.format(device))
+      progress.print(stats, tag=device)
+    print('Epoch {} Tracker Rates:'.format(epoch_itr.epoch))
+    for tracker in trackers:
+      print('\tRate={:.2f}'.format(tracker.rate()))
+    print('Epoch {} end'.format(epoch_itr.epoch))
+    print(torch_xla._XLAC._xla_metrics_report())
 
     # VALIDATION
     valid_losses = [None]
     if not args.disable_validation and epoch_itr.epoch % args.validate_interval == 0:
       valid_losses = validate(args, trainers, task, epoch_itr, valid_subsets)
-    print(torch_xla._XLAC._xla_metrics_report())
 
-    # TODO(taylanbil): verify the learning rate update
-    from fairseq import pdb
-    pdb.set_trace()
-    # only use first validation loss to update the learning rate
-    lr = trainer.lr_step(epoch_itr.epoch, valid_losses[0])
+    # only use average first validation loss to update the learning rate
+    assert len(DEVICES) == len(valid_losses[0])
+    vloss = sum(valid_losses[0])/len(DEVICES)
+    print('old learning rate: {}'.format(lr))
+    lr = trainers[DEVICES[0]].lr_step(epoch_itr.epoch, vloss)
+    print('new learning rate: {}'.format(lr))
 
     # save checkpoint
     if epoch_itr.epoch % args.save_interval == 0:
-      checkpoint_utils.save_checkpoint(args, trainer, epoch_itr, valid_losses[0])
+      checkpoint_utils.save_checkpoint(args, trainer, epoch_itr, vloss)
+
+    print(torch_xla._XLAC._xla_metrics_report())
 
   train_meter.stop()
   print('| done training in {:.1f} seconds'.format(train_meter.sum))
+
+
+def count_compiles(fullreport=False):
+  metricsreport = torch_xla._XLAC._xla_metrics_report().split('\n')
+  for i, line in enumerate(metricsreport):
+    if line.endswith('CompileTime'):
+      print('{} compiles'.format(metricsreport[i+1]))
+      break
+  if fullreport:
+    print('\n'.join(metricsreport))
 
 
 if __name__ == '__main__':
