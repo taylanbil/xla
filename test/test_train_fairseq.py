@@ -84,11 +84,9 @@ def parse_args():
   if not FLAGS.use_gpu:
     if FLAGS.update_freq != 1:
       FLAGS.update_freq = 1
-      print(
-          ('overriding update_freq. It is now 1. Gradient'
-           ' update delaying is achieved through `num_cores`'
-           ' in TPU setting.'
-      )
+      print(('overriding update_freq. It is now 1. Gradient'
+             ' update delaying is achieved through `num_cores`'
+             ' in TPU setting.'))
     if FLAGS.fp16:
       print('suppressing "fp16"')
       FLAGS.fp16 = False
