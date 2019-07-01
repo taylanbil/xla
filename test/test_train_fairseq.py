@@ -168,6 +168,8 @@ def main_tpu(args):
     tracker = xm.RateTracker()
     for i, samples in loader:
       print('training/ device {}, step {}: begin'.format(device, i))
+      if i and not i % 50:
+        print('Device {}, Rate={:.2f}'.format(device, tracker.rate()))
       samples = [
           batch for batch in samples if batch['nsentences'] == BATCH_SIZE
       ]
