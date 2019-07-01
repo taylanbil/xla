@@ -162,10 +162,12 @@ def main_tpu(args):
     tracker = xm.RateTracker()
     for i, samples in loader:
       print('training/ device {}, step {}: begin'.format(device, i))
+      samples =[batch for batch in samples
+                if batch['nsentences'] == BATCH_SIZE]
       _log_output = trainer.train_step(samples)
       xm.optimizer_step(trainer.optimizer)
       print('training/ device {}, step {}: end'.format(device, i))
-      tracker.add(BATCH_SIZE)
+      tracker.add(len(samples) * BATCH_SIZE)
     stats = fairseq_train.get_training_stats(trainer)
     return tracker, stats
 
@@ -178,6 +180,10 @@ def main_tpu(args):
         meter.reset()
     extra_meters = collections.defaultdict(lambda: AverageMeter())
     for i, sample in loader:
+      if sample['nsentences'] != BATCH_SIZE:
+        from fairseq import pdb
+        pdb.set_trace()
+        continue
       print(
           'validation/ device {}, step {} begin'.format(device, i), flush=True)
       log_output = trainer.valid_step(sample)
