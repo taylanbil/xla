@@ -36,9 +36,7 @@ def collate_tokens_new(values,
                        eos_idx=None,
                        left_pad=False,
                        move_eos_to_beginning=False):
-  """
-  Copied over from fairseq.data_utils, and modified so that
-  num_columns in the output tensor is not too variable.
+  """Copied over from fairseq.data_utils, and modified so that num_columns in the output tensor is not too variable.
   """
   # correcting columns
   global PAD_TO_LENGTH
@@ -180,7 +178,8 @@ def main_tpu(args):
         meter.reset()
     extra_meters = collections.defaultdict(lambda: AverageMeter())
     for i, sample in loader:
-      print('validation/ device {}, step {} begin'.format(device, i), flush=True)
+      print(
+          'validation/ device {}, step {} begin'.format(device, i), flush=True)
       log_output = trainer.valid_step(sample)
       for k, v in log_output.items():
         if k in ['loss', 'nll_loss', 'ntokens', 'nsentences', 'sample_size']:
@@ -198,29 +197,29 @@ def main_tpu(args):
       print('Validating the subset "{}"'.format(subset))
       # Initialize data iterator
       itr = task.get_batch_iterator(
-        dataset=task.dataset(subset),
-        max_tokens=args.max_tokens,
-        max_sentences=args.max_sentences_valid,
-        max_positions=utils.resolve_max_positions(
-          task.max_positions(),
-          list(trainers.values())[0].get_model().max_positions(),
-        ),
-        ignore_invalid_inputs=args.skip_invalid_size_inputs_valid_test,
-        required_batch_size_multiple=args.required_batch_size_multiple,
-        seed=args.seed,
-        num_workers=args.num_workers).next_epoch_itr(shuffle=False)
+          dataset=task.dataset(subset),
+          max_tokens=args.max_tokens,
+          max_sentences=args.max_sentences_valid,
+          max_positions=utils.resolve_max_positions(
+              task.max_positions(),
+              list(trainers.values())[0].get_model().max_positions(),
+          ),
+          ignore_invalid_inputs=args.skip_invalid_size_inputs_valid_test,
+          required_batch_size_multiple=args.required_batch_size_multiple,
+          seed=args.seed,
+          num_workers=args.num_workers).next_epoch_itr(shuffle=False)
       progress = progress_bar.build_progress_bar(
-            args, itr, epoch_itr.epoch,
-            prefix='valid on \'{}\' subset'.format(subset),
-            no_progress_bar='simple'
-        )
+          args,
+          itr,
+          epoch_itr.epoch,
+          prefix='valid on \'{}\' subset'.format(subset),
+          no_progress_bar='simple')
       stats_per_device = model_parallel(valid_loop_fn, progress)
       valid_losses.append([stats['loss'].avg for stats in stats_per_device])
       print('validation stats on subset "{}"'.format(subset))
       trainer = trainers[DEVICES[0]]
       for stats in stats_per_device:
-        progress.print(
-          stats, tag=subset, step=trainer.get_num_updates())
+        progress.print(stats, tag=subset, step=trainer.get_num_updates())
     return valid_losses
 
   def initialize_loader_for_epoch(args, epoch_itr):
@@ -234,7 +233,7 @@ def main_tpu(args):
         fix_batches_to_gpus=False, shuffle=(epoch_itr.epoch >= args.curriculum))
     itr = iterators.GroupedIterator(itr, update_freq)
     progress = progress_bar.build_progress_bar(
-      args, itr, epoch_itr.epoch, no_progress_bar='simple')
+        args, itr, epoch_itr.epoch, no_progress_bar='simple')
     return progress
 
   def keep_training(lr, epoch_itr, trainers):
@@ -248,10 +247,11 @@ def main_tpu(args):
 
   print('Args')
   for key, val in args.__dict__.items():
-    print("\t{} {}".format(key, val))
+    print('\t{} {}'.format(key, val))
   print('---------')
 
-  task, trainers, model_parallel, epoch_itr, lr, valid_subsets = prepare_task(args)
+  task, trainers, model_parallel, epoch_itr, lr, valid_subsets = prepare_task(
+      args)
 
   train_meter = StopwatchMeter()
   train_meter.start()
@@ -279,7 +279,7 @@ def main_tpu(args):
 
     # only use average first validation loss to update the learning rate
     assert len(DEVICES) == len(valid_losses[0])
-    vloss = sum(valid_losses[0])/len(DEVICES)
+    vloss = sum(valid_losses[0]) / len(DEVICES)
     print('old learning rate: {}'.format(lr))
     lr = trainers[DEVICES[0]].lr_step(epoch_itr.epoch, vloss)
     print('new learning rate: {}'.format(lr))
@@ -298,7 +298,7 @@ def count_compiles(fullreport=False):
   metricsreport = torch_xla._XLAC._xla_metrics_report().split('\n')
   for i, line in enumerate(metricsreport):
     if line.endswith('CompileTime'):
-      print('{} compiles'.format(metricsreport[i+1]))
+      print('{} compiles'.format(metricsreport[i + 1]))
       break
   if fullreport:
     print('\n'.join(metricsreport))
