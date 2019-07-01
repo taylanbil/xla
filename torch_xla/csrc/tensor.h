@@ -557,7 +557,8 @@ class XLATensor {
                                         const XLATensor& input,
                                         const XLATensor& buffer);
 
-  static XLATensor log_softmax(const XLATensor& input, xla::int64 dim);
+  static XLATensor log_softmax(const XLATensor& input, xla::int64 dim,
+                               c10::optional<at::ScalarType> dtype);
 
   static XLATensor log_softmax_backward(const XLATensor& grad_output,
                                         const XLATensor& output,
@@ -763,7 +764,8 @@ class XLATensor {
                                            const XLATensor& target,
                                            xla::int64 reduction);
 
-  static XLATensor softmax(const XLATensor& input, xla::int64 dim);
+  static XLATensor softmax(const XLATensor& input, xla::int64 dim,
+                           c10::optional<at::ScalarType> dtype);
   static XLATensor softmax_backward(const XLATensor& grad_output,
                                     const XLATensor& output, xla::int64 dim);
 
@@ -836,6 +838,9 @@ class XLATensor {
 
   static XLATensor threshold_backward(const XLATensor& grad_output,
                                       const XLATensor& input, float threshold);
+
+  static XLATensor to(XLATensor& input, c10::optional<Device> device,
+                      c10::optional<at::ScalarType> scalar_type);
 
   static std::tuple<XLATensor, XLATensor> topk(const XLATensor& input,
                                                xla::int64 k, xla::int64 dim,
@@ -1006,7 +1011,10 @@ class XLATensor {
   std::shared_ptr<View> UpdateView(std::shared_ptr<View> view,
                                    ir::Value ir_value) const;
 
-  XLATensor CreateView(ViewInfo view_info) const;
+  std::shared_ptr<View> CreateView(ViewInfo view_info) const;
+  XLATensor CreateViewTensor(ViewInfo view_info) const;
+
+  XLATensor CopyTensorToDevice(const Device& device);
 
   // Create a new XLA tensor with the same metadata of the input tensor (with
   // possible overrides), and the new IR value.
