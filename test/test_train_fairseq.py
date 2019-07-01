@@ -82,11 +82,11 @@ def parse_args():
   parser.add_argument('--use_gpu', action='store_true')
   FLAGS = options.parse_args_and_arch(parser)
   if not FLAGS.use_gpu:
-    if FLAGS.update_freq != 1:
-      FLAGS.update_freq = 1
-      print(('overriding update_freq. It is now 1. Gradient'
-             ' update delaying is achieved through `num_cores`'
-             ' in TPU setting.'))
+    if FLAGS.update_freq != [1]:
+      FLAGS.update_freq = [1]
+      print(('overriding update_freq. It is now globally 1.'
+             ' Gradient update delaying is achieved through'
+             ' `num_cores` in TPU setting.'))
     if FLAGS.fp16:
       print('suppressing "fp16"')
       FLAGS.fp16 = False
