@@ -169,7 +169,7 @@ def main_tpu(args):
       if i and not i % 50:
         from datetime import datetime
         print(datetime.now())
-        print('Device {}, Rate={:.2f}'.format(device, tracker.rate()))
+        print('Device {}, Rate={:.2f}, Compiles={}'.format(device, tracker.rate(), count_compiles()))
       samples = [
           batch for batch in samples if batch['nsentences'] == BATCH_SIZE
       ]
