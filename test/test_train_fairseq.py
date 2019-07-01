@@ -36,8 +36,7 @@ def collate_tokens_new(values,
                        eos_idx=None,
                        left_pad=False,
                        move_eos_to_beginning=False):
-  """Copied over from fairseq.data_utils, and modified so that num_columns in the output tensor is not too variable.
-  """
+  """Copied over from fairseq.data_utils, and modified so that num_columns in the output tensor is not too variable."""
   # correcting columns
   global PAD_TO_LENGTH
   size = max(v.size(0) for v in values)
@@ -162,11 +161,11 @@ def main_tpu(args):
     tracker = xm.RateTracker()
     for i, samples in loader:
       print('training/ device {}, step {}: begin'.format(device, i))
-      samples =[batch for batch in samples
-                if batch['nsentences'] == BATCH_SIZE]
+      samples = [
+          batch for batch in samples if batch['nsentences'] == BATCH_SIZE
+      ]
       _log_output = trainer.train_step(samples)
       xm.optimizer_step(trainer.optimizer)
-      print('training/ device {}, step {}: end'.format(device, i))
       tracker.add(len(samples) * BATCH_SIZE)
     stats = fairseq_train.get_training_stats(trainer)
     return tracker, stats
