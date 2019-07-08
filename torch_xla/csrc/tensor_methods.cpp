@@ -142,6 +142,18 @@ void CheckDimensionSize(const XLATensor& t, xla::int64 dim,
       << " (while checking arguments for " << tag << ")";
 }
 
+std::vector<xla::int64> GetExpandDimanesions(
+    const xla::Shape& shape, std::vector<xla::int64> dimensions) {
+  XLA_CHECK_GE(dimensions.size(), shape.rank()) << shape;
+  xla::int64 base = dimensions.size() - shape.rank();
+  for (size_t i = 0; i < shape.rank(); ++i) {
+    if (dimensions[base + i] == -1) {
+      dimensions[base + i] = shape.dimensions(i);
+    }
+  }
+  return dimensions;
+}
+
 // Resizes and / or checks whether a list is of the given size. The list is only
 // resized if its size is 1. If it's empty, it's replaced with the provided
 // default first.
@@ -916,8 +928,10 @@ void XLATensor::exp_(XLATensor& input) {
 
 XLATensor XLATensor::expand(const XLATensor& input,
                             std::vector<xla::int64> size) {
-  return input.CreateFrom(
-      ir::MakeNode<ir::ops::Expand>(input.GetIrValue(), std::move(size)));
+  auto input_shape = input.shape();
+  return input.CreateFrom(ir::MakeNode<ir::ops::Expand>(
+      input.GetIrValue(),
+      GetExpandDimanesions(input_shape.get(), std::move(size))));
 }
 
 XLATensor XLATensor::expm1(const XLATensor& input) {
@@ -1259,10 +1273,14 @@ XLATensor XLATensor::log_sigmoid_backward(const XLATensor& grad_output,
       grad_output.GetIrValue(), input.GetIrValue(), buffer.GetIrValue()));
 }
 
-XLATensor XLATensor::log_softmax(const XLATensor& input, xla::int64 dim) {
-  return input.CreateFrom(ir::MakeNode<ir::ops::LogSoftmax>(
-      input.GetIrValue(),
-      XlaHelpers::GetCanonicalDimensionIndex(dim, input.shape().get().rank())));
+XLATensor XLATensor::log_softmax(const XLATensor& input, xla::int64 dim,
+                                 c10::optional<at::ScalarType> dtype) {
+  return input.CreateFrom(
+      ir::MakeNode<ir::ops::LogSoftmax>(input.GetIrValue(),
+                                        XlaHelpers::GetCanonicalDimensionIndex(
+                                            dim, input.shape().get().rank()),
+                                        dtype),
+      dtype);
 }
 
 XLATensor XLATensor::log_softmax_backward(const XLATensor& grad_output,
@@ -1380,7 +1398,8 @@ XLATensor XLATensor::mean(const XLATensor& input,
       ir::MakeNode<ir::ops::Mean>(input.GetIrValue(),
                                   XlaHelpers::GetCanonicalDimensionIndices(
                                       dimensions, input.shape().get().rank()),
-                                  keep_reduced_dimensions, dtype));
+                                  keep_reduced_dimensions, dtype),
+      dtype);
 }
 
 XLATensor XLATensor::min(const XLATensor& input, const XLATensor& other) {
@@ -1581,7 +1600,8 @@ XLATensor XLATensor::prod(const XLATensor& input,
       ir::MakeNode<ir::ops::Prod>(input.GetIrValue(),
                                   XlaHelpers::GetCanonicalDimensionIndices(
                                       dimensions, input.shape().get().rank()),
-                                  keep_reduced_dimensions, dtype));
+                                  keep_reduced_dimensions, dtype),
+      dtype);
 }
 
 std::tuple<XLATensor, XLATensor> XLATensor::qr(const XLATensor& input,
@@ -1821,10 +1841,14 @@ XLATensor XLATensor::smooth_l1_loss_backward(const XLATensor& grad_output,
                                           reduction);
 }
 
-XLATensor XLATensor::softmax(const XLATensor& input, xla::int64 dim) {
-  return input.CreateFrom(ir::MakeNode<ir::ops::Softmax>(
-      input.GetIrValue(),
-      XlaHelpers::GetCanonicalDimensionIndex(dim, input.shape().get().rank())));
+XLATensor XLATensor::softmax(const XLATensor& input, xla::int64 dim,
+                             c10::optional<at::ScalarType> dtype) {
+  return input.CreateFrom(
+      ir::MakeNode<ir::ops::Softmax>(input.GetIrValue(),
+                                     XlaHelpers::GetCanonicalDimensionIndex(
+                                         dim, input.shape().get().rank()),
+                                     dtype),
+      dtype);
 }
 
 XLATensor XLATensor::softmax_backward(const XLATensor& grad_output,
