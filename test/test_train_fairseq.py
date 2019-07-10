@@ -80,6 +80,7 @@ def parse_args():
   parser = options.get_training_parser()
   parser.add_argument('--num_cores', type=int, default=8)
   parser.add_argument('--pad_to_length', type=int, default=64)
+  parser.add_argument('--log_steps', type=int, default=20)
   parser.add_argument('--use_gpu', action='store_true')
   FLAGS = options.parse_args_and_arch(parser)
   if not FLAGS.use_gpu:
@@ -166,10 +167,10 @@ def main_tpu(args):
     stats = None
     tracker = xm.RateTracker()
     for i, samples in loader:
-      if i and not i % 50:
+      if i and not i % args.log_steps:
         print('training {}, device {}, step {}, Rate={:.2f}, Compiles={}'.format(
             datetime.now().strftime('%H:%M:%S'),
-            device, i, count_compiles()))
+            device, i, tracker.rate(), count_compiles()))
       # fairseq shuffles batches around so last batch ends up in the middle
       samples = [
           batch for batch in samples if batch['nsentences'] == BATCH_SIZE
