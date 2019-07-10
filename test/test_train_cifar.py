@@ -154,13 +154,15 @@ def train_cifar():
 
   def train_loop_fn(model, loader, device, context):
     loss_fn = nn.CrossEntropyLoss()
-    optimizer = optim.SGD(
-        model.parameters(),
-        lr=FLAGS.lr,
-        momentum=FLAGS.momentum,
-        weight_decay=5e-4)
+    optimizer = context.getattr_or(
+        'optimizer', lambda: optim.SGD(
+            model.parameters(),
+            lr=FLAGS.lr,
+            momentum=FLAGS.momentum,
+            weight_decay=5e-4))
     tracker = xm.RateTracker()
 
+    model.train()
     for x, (data, target) in loader:
       optimizer.zero_grad()
       output = model(data)
@@ -175,6 +177,7 @@ def train_cifar():
   def test_loop_fn(model, loader, device, context):
     total_samples = 0
     correct = 0
+    model.eval()
     for x, (data, target) in loader:
       output = model(data)
       pred = output.max(1, keepdim=True)[1]
