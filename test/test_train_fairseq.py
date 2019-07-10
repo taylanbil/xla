@@ -9,6 +9,7 @@ import sys
 import os
 import math
 import collections
+from datetime import datetime
 
 pytorch_folder = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(sys.argv[0]))))
@@ -166,9 +167,10 @@ def main_tpu(args):
     tracker = xm.RateTracker()
     for i, samples in loader:
       if i and not i % 50:
-        from datetime import datetime
-        print('Device {}, Rate={:.2f}, Compiles={}'.format(device, tracker.rate(), count_compiles()))
-        print('training {}/ device {}, step {}: begin'.format(datetime.now(), device, i))
+        print('training {}, device {}, step {}, Rate={:.2f}, Compiles={}'.format(
+            datetime.now().strftime('%H:%M:%S'),
+            device, i, count_compiles()))
+      # fairseq shuffles batches around so last batch ends up in the middle
       samples = [
           batch for batch in samples if batch['nsentences'] == BATCH_SIZE
       ]
@@ -307,14 +309,11 @@ def main_tpu(args):
   print('| done training in {:.1f} seconds'.format(train_meter.sum))
 
 
-def count_compiles(fullreport=False):
+def count_compiles():
   metricsreport = torch_xla._XLAC._xla_metrics_report().split('\n')
   for i, line in enumerate(metricsreport):
     if line.endswith('CompileTime'):
-      print('{} compiles'.format(metricsreport[i + 1]))
-      break
-  if fullreport:
-    print('\n'.join(metricsreport))
+      return int(''.join([c for c in metricsreport[i + 1] if c.isdigit()]))
 
 
 if __name__ == '__main__':
