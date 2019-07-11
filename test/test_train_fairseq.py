@@ -106,6 +106,10 @@ def parse_args():
             ' to have good performance on TPUs. Using {}'.format(batch_size))
       FLAGS.max_sentences = batch_size
       FLAGS.required_batch_size_multiple = batch_size
+    if FLAGS.max_sentences_valid is not None and FLAGS.max_sentences_valid != FLAGS.max_sentences:
+      FLAGS.max_sentences_valid = FLAGS.max_sentences
+      print('"max_sentences_valid" and "max_sentences" must be equal'
+            ' to have good performance on TPUs. Using {}'.format(FLAGS.max_sentences))
     if FLAGS.max_tokens is not None:
       print('"max_tokens" needs to be None for better TPU performance')
       FLAGS.max_tokens = None
@@ -191,6 +195,7 @@ def main_tpu(args):
     extra_meters = collections.defaultdict(lambda: AverageMeter())
     for i, sample in loader:
       if sample['nsentences'] != BATCH_SIZE:
+        print("Got bad batch! size {} (expected {})".format(sample['nsentences'], BATCH_SIZE))
         from fairseq import pdb
         pdb.set_trace()
         continue
