@@ -109,7 +109,8 @@ def parse_args():
     if FLAGS.max_sentences_valid is not None and FLAGS.max_sentences_valid != FLAGS.max_sentences:
       FLAGS.max_sentences_valid = FLAGS.max_sentences
       print('"max_sentences_valid" and "max_sentences" must be equal'
-            ' to have good performance on TPUs. Using {}'.format(FLAGS.max_sentences))
+            ' to have good performance on TPUs. Using {}'.format(
+                FLAGS.max_sentences))
     if FLAGS.max_tokens is not None:
       print('"max_tokens" needs to be None for better TPU performance')
       FLAGS.max_tokens = None
@@ -172,9 +173,10 @@ def main_tpu(args):
     tracker = xm.RateTracker()
     for i, samples in loader:
       if i and not i % args.log_steps:
-        print('training {}, device {}, step {}, Rate={:.2f}, Compiles={}'.format(
-            datetime.now().strftime('%H:%M:%S'),
-            device, i, tracker.rate(), count_compiles()))
+        print(
+            'training {}, device {}, step {}, Rate={:.2f}, Compiles={}'.format(
+                datetime.now().strftime('%H:%M:%S'), device, i, tracker.rate(),
+                count_compiles()))
       # fairseq shuffles batches around so last batch ends up in the middle
       samples = [
           batch for batch in samples if batch['nsentences'] == BATCH_SIZE
@@ -195,7 +197,8 @@ def main_tpu(args):
     extra_meters = collections.defaultdict(lambda: AverageMeter())
     for i, sample in loader:
       if sample['nsentences'] != BATCH_SIZE:
-        print("Got bad batch! size {} (expected {})".format(sample['nsentences'], BATCH_SIZE))
+        print('Got bad batch! size {} (expected {})'.format(
+            sample['nsentences'], BATCH_SIZE))
         from fairseq import pdb
         pdb.set_trace()
         continue
