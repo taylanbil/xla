@@ -281,7 +281,7 @@ def main_tpu(args):
   train_meter.start()
   while keep_training(lr, epoch_itr, trainers):
     # TRAINING
-    print('Epoch {} begin'.format(epoch_itr.epoch))
+    print('Epoch {} begin'.format(epoch_itr.epoch + 1))
     progress = initialize_loader_for_epoch(args, epoch_itr)
     out = model_parallel(train_loop_fn, progress)
     trackers, stats_ = zip(*out)
