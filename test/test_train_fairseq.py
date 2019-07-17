@@ -137,10 +137,6 @@ def prepare_task(args):
       model_parallel._get_model_device(model): model
       for model in model_parallel._models
   }
-  # turning enable_torch_version off as it degrades perf on TPUs
-  for model in model_parallel._models:
-    model.enable_torch_version = False
-  # print model and criterion
   model, criterion = model_parallel._models[0], list(criteria.values())[0]
   print(model)
   print('| model {}, criterion {}'.format(args.arch,
