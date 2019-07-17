@@ -29,8 +29,6 @@ function install_llvm_clang() {
 
 function install_req_packages() {
   sudo apt-get -y install python-pip git curl libopenblas-dev vim
-  /usr/bin/yes | sudo pip install --upgrade google-api-python-client
-  /usr/bin/yes | sudo pip install --upgrade oauth2client
   install_bazel
 }
 
@@ -53,9 +51,13 @@ function install_and_setup_conda() {
   conda create -y --name "$ENVNAME" python=${PYTHON_VERSION} anaconda
   source activate "$ENVNAME"
   export CMAKE_PREFIX_PATH="$(dirname $(which conda))/../"
+  
   conda install -y numpy pyyaml setuptools cmake cffi typing tqdm
-  sudo /sbin/ldconfig "${HOME}/anaconda3/lib/" "${HOME}/anaconda3/envs/pytorch/lib"
+  /usr/bin/yes | pip install --upgrade google-api-python-client
+  /usr/bin/yes | pip install --upgrade oauth2client
   /usr/bin/yes | pip install lark-parser
+  
+  sudo /sbin/ldconfig "${HOME}/anaconda3/lib/" "${HOME}/anaconda3/envs/pytorch/lib"
 }
 
 function build_and_install_torch() {
