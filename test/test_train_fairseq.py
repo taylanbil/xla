@@ -174,7 +174,7 @@ def main_tpu(args):
     for i, samples in loader:
       if i and not i % args.log_steps:
         print(
-            'training {}, device {}, step {}, Rate={:.2f}, Compiles={}'.format(
+            'training/ {}, device {}, step {}, Rate={:.2f}, Compiles={}'.format(
                 datetime.now().strftime('%H:%M:%S'), device, i, tracker.rate(),
                 count_compiles()))
       # fairseq shuffles batches around so last batch ends up in the middle
