@@ -10,6 +10,7 @@
 #include <grpcpp/server_context.h>
 
 #include <atomic>
+#include <chrono>
 #include <iostream>
 #include <mutex>
 #include <unordered_map>
@@ -20,6 +21,7 @@
 #include "tensorflow/compiler/xla/xla_client/multi_wait.h"
 #include "tensorflow/compiler/xla/xla_client/sys_util.h"
 #include "tensorflow/compiler/xla/xla_client/thread_pool.h"
+#include "tensorflow/compiler/xla/xla_client/util.h"
 
 namespace xla {
 namespace service {
@@ -110,7 +112,8 @@ class MeshServiceImpl : public grpc::MeshService::Service {
   rendezvous->mwait.Done();
   TF_VLOG(3) << "Entering rendezvous: tag=" << request->tag()
              << " peer=" << context->peer();
-  ::grpc::Status status = ToGrpcStatus(rendezvous->mwait.Wait());
+  ::grpc::Status status =
+      ToGrpcStatus(xla::util::CheckedCall([&]() { rendezvous->mwait.Wait(); }));
   TF_VLOG(3) << "Exiting rendezvous: tag=" << request->tag()
              << " peer=" << context->peer() << " status=" << status;
   ReleaseRendezvous(request->tag(), rendezvous);
@@ -138,11 +141,12 @@ MeshService::~MeshService() {}
 
 struct MeshClient::Impl {
   explicit Impl(const string& address) : address(address) {
-    std::shared_ptr<::grpc::Channel> channel =
+    channel =
         ::grpc::CreateChannel(address, ::grpc::InsecureChannelCredentials());
     stub = grpc::MeshService::NewStub(channel);
   }
 
+  std::shared_ptr<::grpc::Channel> channel;
   std::unique_ptr<grpc::MeshService::Stub> stub;
   string address;
 };
@@ -158,7 +162,16 @@ MeshClient* MeshClient::Get() {
   return client;
 }
 
-MeshClient::MeshClient(const string& address) : impl_(new Impl(address)) {}
+MeshClient::MeshClient(const string& address) : impl_(new Impl(address)) {
+  int64 connect_wait_seconds =
+      sys_util::GetEnvInt("XRT_MESH_CONNECT_WAIT", 300);
+  TF_LOG(INFO) << "Waiting to connect to client mesh master ("
+               << connect_wait_seconds << " seconds) " << address;
+  XLA_CHECK(impl_->channel->WaitForConnected(
+      std::chrono::system_clock::now() +
+      std::chrono::seconds(connect_wait_seconds)))
+      << "Failed to connect to client mesh master: " << address;
+}
 
 MeshClient::~MeshClient() {}
 

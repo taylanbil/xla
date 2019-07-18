@@ -24,13 +24,12 @@ function install_llvm_clang() {
   wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key|sudo apt-key add -
   sudo apt-get update
   sudo apt-get -y install clang-7 clang++-7
+  echo 'export CC=clang-7 CXX=clang++-7' >> ~/.bashrc
   export CC=clang-7 CXX=clang++-7
 }
 
 function install_req_packages() {
-  sudo apt-get -y install python-pip git curl libopenblas-dev
-  /usr/bin/yes | sudo pip install --upgrade google-api-python-client
-  /usr/bin/yes | sudo pip install --upgrade oauth2client
+  sudo apt-get -y install python-pip git curl libopenblas-dev vim
   install_bazel
 }
 
@@ -53,9 +52,13 @@ function install_and_setup_conda() {
   conda create -y --name "$ENVNAME" python=${PYTHON_VERSION} anaconda
   source activate "$ENVNAME"
   export CMAKE_PREFIX_PATH="$(dirname $(which conda))/../"
+  
   conda install -y numpy pyyaml setuptools cmake cffi typing tqdm
-  sudo /sbin/ldconfig "${HOME}/anaconda3/lib/" "${HOME}/anaconda3/envs/pytorch/lib"
+  /usr/bin/yes | pip install --upgrade google-api-python-client
+  /usr/bin/yes | pip install --upgrade oauth2client
   /usr/bin/yes | pip install lark-parser
+  
+  sudo /sbin/ldconfig "${HOME}/anaconda3/lib/" "${HOME}/anaconda3/envs/pytorch/lib"
 }
 
 function build_and_install_torch() {
