@@ -201,8 +201,6 @@ def main_tpu(args):
       if sample['nsentences'] != BATCH_SIZE:
         print('Got bad batch! size {} (expected {})'.format(
             sample['nsentences'], BATCH_SIZE))
-        from fairseq import pdb
-        pdb.set_trace()
         continue
       if i and not i % args.log_steps:
         print('validation/ {} device {}, step {} begin'.format(
@@ -242,10 +240,13 @@ def main_tpu(args):
           no_progress_bar='simple')
       stats_per_device = model_parallel(valid_loop_fn, progress)
       valid_losses.append([stats['loss'].avg for stats in stats_per_device])
-      print('validation stats on subset "{}"'.format(subset))
+      print('validation stats on subset "{}" - {}'.format(subset, now()))
       trainer = trainers[DEVICES[0]]
       for stats in stats_per_device:
+        # FIXME(taylanbil): printing stats seem to be *VERY* slow
+        print(now())
         progress.print(stats, tag=subset, step=trainer.get_num_updates())
+        print(now())
     return valid_losses
 
   def initialize_loader_for_epoch(args, epoch_itr):
@@ -291,7 +292,9 @@ def main_tpu(args):
     for device, trainer in trainers.items():
       stats = fairseq_train.get_training_stats(trainer)
       print('device {}'.format(device))
+      print(now())
       progress.print(stats, tag=device)
+      print(now())
     print('Epoch {} Tracker Rates:'.format(epoch_itr.epoch))
     for tracker in trackers:
       print('\tRate={:.2f}'.format(tracker.rate()))
