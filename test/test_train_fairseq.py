@@ -167,6 +167,7 @@ def prepare_task(args):
 def now():
   return datetime.now().strftime('%H:%M:%S')
 
+
 def main_tpu(args):
 
   def train_loop_fn(model, loader, device, context):
@@ -177,8 +178,7 @@ def main_tpu(args):
       if i and not i % args.log_steps:
         print(
             'training/ {}, device {}, step {}, Rate={:.2f}, Compiles={}'.format(
-                now(), device, i, tracker.rate(),
-                count_compiles()))
+                now(), device, i, tracker.rate(), count_compiles()))
       # fairseq shuffles batches around so last batch ends up in the middle
       samples = [
           batch for batch in samples if batch['nsentences'] == BATCH_SIZE
@@ -205,9 +205,8 @@ def main_tpu(args):
         pdb.set_trace()
         continue
       if i and not i % args.log_steps:
-        print(
-            'validation/ {} device {}, step {} begin'.format(
-                now(), device, i))
+        print('validation/ {} device {}, step {} begin'.format(
+            now(), device, i))
       log_output = trainer.valid_step(sample)
       for k, v in log_output.items():
         if k in ['loss', 'nll_loss', 'ntokens', 'nsentences', 'sample_size']:
@@ -284,7 +283,7 @@ def main_tpu(args):
   train_meter.start()
   while keep_training(lr, epoch_itr, trainers):
     # TRAINING
-    print('Epoch {} begin {}'.format(epoch_itr.epoch + 1), now())
+    print('Epoch {} begin {}'.format(epoch_itr.epoch + 1, now()))
     progress = initialize_loader_for_epoch(args, epoch_itr)
     out = model_parallel(train_loop_fn, progress)
     trackers, stats_ = zip(*out)
@@ -296,7 +295,7 @@ def main_tpu(args):
     print('Epoch {} Tracker Rates:'.format(epoch_itr.epoch))
     for tracker in trackers:
       print('\tRate={:.2f}'.format(tracker.rate()))
-    print('Epoch {} end {}'.format(epoch_itr.epoch), now())
+    print('Epoch {} end {}'.format(epoch_itr.epoch, now()))
     print(torch_xla._XLAC._xla_metrics_report())
 
     # VALIDATION
