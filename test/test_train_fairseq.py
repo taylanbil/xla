@@ -145,7 +145,6 @@ def prepare_task(args):
       sum(p.numel() for p in model.parameters()),
       sum(p.numel() for p in model.parameters() if p.requires_grad),
   ))
-  del model, criterion
 
   # Build trainers
   trainers = {
@@ -202,14 +201,15 @@ def main_tpu(args):
         from fairseq import pdb
         pdb.set_trace()
         continue
-      print(
-          'validation/ device {}, step {} begin'.format(device, i), flush=True)
+      if i and not i % args.log_steps:
+        print(
+            'validation/ {} device {}, step {} begin'.format(
+                datetime.now().strftime('%H:%M:%S'), device, i))
       log_output = trainer.valid_step(sample)
       for k, v in log_output.items():
         if k in ['loss', 'nll_loss', 'ntokens', 'nsentences', 'sample_size']:
           continue
         extra_meters[k].update(v)
-      print('validation/ device {}, step {} end'.format(device, i), flush=True)
     stats = fairseq_train.get_valid_stats(trainer)
     for k, meter in extra_meters.items():
       stats[k] = meter.avg

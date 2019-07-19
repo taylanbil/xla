@@ -564,11 +564,12 @@ at::Tensor AtenXlaType::avg_pool2d(const at::Tensor& self,
                                    at::IntArrayRef kernel_size,
                                    at::IntArrayRef stride,
                                    at::IntArrayRef padding, bool ceil_mode,
-                                   bool count_include_pad) {
-  // Lowering when ceil_mode is set not supported yet.
-  if (ceil_mode && count_include_pad) {
+                                   bool count_include_pad,
+                                   c10::optional<int64_t> divisor_override) {
+  if ((ceil_mode && count_include_pad) || divisor_override) {
     return AtenXlaTypeDefault::avg_pool2d(self, kernel_size, stride, padding,
-                                          ceil_mode, count_include_pad);
+                                          ceil_mode, count_include_pad,
+                                          divisor_override);
   }
   return bridge::AtenFromXlaTensor(XLATensor::avg_pool_nd(
       bridge::GetXlaTensor(self), /*spatial_dim_count=*/2,
@@ -579,12 +580,12 @@ at::Tensor AtenXlaType::avg_pool2d(const at::Tensor& self,
 at::Tensor AtenXlaType::avg_pool2d_backward(
     const at::Tensor& grad_output, const at::Tensor& self,
     at::IntArrayRef kernel_size, at::IntArrayRef stride,
-    at::IntArrayRef padding, bool ceil_mode, bool count_include_pad) {
-  // Lowering when ceil_mode is set not supported yet.
-  if (ceil_mode && count_include_pad) {
+    at::IntArrayRef padding, bool ceil_mode, bool count_include_pad,
+    c10::optional<int64_t> divisor_override) {
+  if ((ceil_mode && count_include_pad) || divisor_override) {
     return AtenXlaTypeDefault::avg_pool2d_backward(
         grad_output, self, kernel_size, stride, padding, ceil_mode,
-        count_include_pad);
+        count_include_pad, divisor_override);
   }
   return bridge::AtenFromXlaTensor(XLATensor::avg_pool_nd_backward(
       bridge::GetXlaTensor(grad_output), bridge::GetXlaTensor(self),
@@ -597,11 +598,12 @@ at::Tensor AtenXlaType::avg_pool3d(const at::Tensor& self,
                                    at::IntArrayRef kernel_size,
                                    at::IntArrayRef stride,
                                    at::IntArrayRef padding, bool ceil_mode,
-                                   bool count_include_pad) {
-  // Lowering when ceil_mode is set not supported yet.
-  if (ceil_mode && count_include_pad) {
+                                   bool count_include_pad,
+                                   c10::optional<int64_t> divisor_override) {
+  if ((ceil_mode && count_include_pad) || divisor_override) {
     return AtenXlaTypeDefault::avg_pool3d(self, kernel_size, stride, padding,
-                                          ceil_mode, count_include_pad);
+                                          ceil_mode, count_include_pad,
+                                          divisor_override);
   }
   return bridge::AtenFromXlaTensor(XLATensor::avg_pool_nd(
       bridge::GetXlaTensor(self), /*spatial_dim_count=*/3,
@@ -612,11 +614,12 @@ at::Tensor AtenXlaType::avg_pool3d(const at::Tensor& self,
 at::Tensor AtenXlaType::avg_pool3d_backward(
     const at::Tensor& grad_output, const at::Tensor& self,
     at::IntArrayRef kernel_size, at::IntArrayRef stride,
-    at::IntArrayRef padding, bool ceil_mode, bool count_include_pad) {
-  if (ceil_mode && count_include_pad) {
+    at::IntArrayRef padding, bool ceil_mode, bool count_include_pad,
+    c10::optional<int64_t> divisor_override) {
+  if ((ceil_mode && count_include_pad) || divisor_override) {
     return AtenXlaTypeDefault::avg_pool3d_backward(
         grad_output, self, kernel_size, stride, padding, ceil_mode,
-        count_include_pad);
+        count_include_pad, divisor_override);
   }
   return bridge::AtenFromXlaTensor(XLATensor::avg_pool_nd_backward(
       bridge::GetXlaTensor(grad_output), bridge::GetXlaTensor(self),
