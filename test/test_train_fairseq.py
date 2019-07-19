@@ -242,9 +242,10 @@ def main_tpu(args):
           no_progress_bar='simple')
       stats_per_device = model_parallel(valid_loop_fn, progress)
       valid_losses.append([stats['loss'].avg for stats in stats_per_device])
-      print('validation stats on subset "{}"'.format(subset))
+      print('validation stats on subset "{}" - {}'.format(subset, now()))
       trainer = trainers[DEVICES[0]]
       for stats in stats_per_device:
+        # FIXME(taylanbil): printing stats seem to be *VERY* slow
         progress.print(stats, tag=subset, step=trainer.get_num_updates())
     return valid_losses
 
