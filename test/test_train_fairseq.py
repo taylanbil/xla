@@ -207,7 +207,7 @@ def main_tpu(args):
       if i and not i % args.log_steps:
         print(
             'validation/ {} device {}, step {} begin'.format(
-                now().strftime('%H:%M:%S'), device, i))
+                now(), device, i))
       log_output = trainer.valid_step(sample)
       for k, v in log_output.items():
         if k in ['loss', 'nll_loss', 'ntokens', 'nsentences', 'sample_size']:
