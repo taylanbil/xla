@@ -132,7 +132,7 @@ def prepare_task(args):
   # Build models and criteria to print some metadata
   criterion = task.build_criterion(args)
   model_parallel = dp.DataParallel(
-      lambda: task.build_model(args), device_ids=DEVICES, drop_last=True)
+      lambda: task.build_model(args), device_ids=DEVICES, drop_last=False)
   criteria = {
       device: task.build_criterion(args)
       for device in model_parallel._device_ids
@@ -179,7 +179,7 @@ def main_tpu(args):
     stats = None
     tracker = xm.RateTracker()
     for i, samples in loader:
-      if i and not i % args.log_steps:
+      if not (i % args.log_steps):
         print(
             'training/ {}, device {}, step {}, Rate={:.2f}, Compiles={}, local_scalar_dense={}'.format(
                 now(), device, i, tracker.rate(), count_compiles(),
@@ -190,6 +190,9 @@ def main_tpu(args):
       samples = [
           batch for batch in samples if batch['nsentences'] == BATCH_SIZE
       ]
+      if not samples:
+        print('training/ device {}, skipping step {} due to bad batch size'.format(device, i))
+        continue
       _log_output = trainer.train_step(samples)
       xm.optimizer_step(trainer.optimizer)
       tracker.add(len(samples) * BATCH_SIZE)
@@ -307,7 +310,8 @@ def main_tpu(args):
     for tracker in trackers:
       print('\tRate={:.2f}'.format(tracker.rate()))
     print('Epoch {} end {}'.format(epoch_itr.epoch, now()))
-    print(torch_xla._XLAC._xla_metrics_report())
+    if args.metrics_debug:
+      print(torch_xla._XLAC._xla_metrics_report())
 
     # VALIDATION
     valid_losses = [None]
