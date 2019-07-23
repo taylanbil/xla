@@ -82,6 +82,7 @@ def parse_args():
   parser.add_argument('--pad_to_length', type=int, default=64)
   parser.add_argument('--log_steps', type=int, default=20)
   parser.add_argument('--use_gpu', action='store_true')
+  parser.add_argument('--metrics_debug', action='store_true')
   FLAGS = options.parse_args_and_arch(parser)
   if not FLAGS.use_gpu:
     if FLAGS.update_freq != [1]:
@@ -90,8 +91,11 @@ def parse_args():
              ' Gradient update delaying is achieved through'
              ' `num_cores` in TPU setting.'))
     if FLAGS.fp16:
-      print('suppressing "fp16"')
+      print('suppressing "fp16" as this is controlled by env var XLA_USE_BF16')
       FLAGS.fp16 = False
+    if FLAGS.clip_norm == 0.0:
+      print('clip_norm needs to be nonzero for good TPU performance, setting it to 25')
+      FLAGS.clip_norm = 25.0
     if FLAGS.distributed_world_size > 1:
       print('suppressing "distributed_world_size"')
       FLAGS.distributed_world_size = 1
@@ -177,8 +181,11 @@ def main_tpu(args):
     for i, samples in loader:
       if i and not i % args.log_steps:
         print(
-            'training/ {}, device {}, step {}, Rate={:.2f}, Compiles={}'.format(
-                now(), device, i, tracker.rate(), count_compiles()))
+            'training/ {}, device {}, step {}, Rate={:.2f}, Compiles={}, local_scalar_dense={}'.format(
+                now(), device, i, tracker.rate(), count_compiles(),
+                torch_xla._XLAC._xla_counter_value('aten::_local_scalar_dense')
+            )
+        )
       # fairseq shuffles batches around so last batch ends up in the middle
       samples = [
           batch for batch in samples if batch['nsentences'] == BATCH_SIZE
@@ -215,38 +222,41 @@ def main_tpu(args):
       stats[k] = meter.avg
     return stats
 
+  def validate_subset(args, trainers, task, epoch_itr, subset):
+    print('Validating the subset "{}"'.format(subset))
+    # Initialize data iterator
+    itr = task.get_batch_iterator(
+        dataset=task.dataset(subset),
+        max_tokens=args.max_tokens,
+        max_sentences=args.max_sentences_valid,
+        max_positions=utils.resolve_max_positions(
+            task.max_positions(),
+            list(trainers.values())[0].get_model().max_positions(),
+        ),
+        ignore_invalid_inputs=args.skip_invalid_size_inputs_valid_test,
+        required_batch_size_multiple=args.required_batch_size_multiple,
+        seed=args.seed,
+        num_workers=args.num_workers).next_epoch_itr(shuffle=False)
+    progress = progress_bar.build_progress_bar(
+        args,
+        itr,
+        epoch_itr.epoch,
+        prefix='valid on \'{}\' subset'.format(subset),
+        no_progress_bar='simple')
+    stats_per_device = model_parallel(valid_loop_fn, progress)
+    valid_losses = [stats['loss'].avg for stats in stats_per_device]
+    print('validation stats on subset "{}" - {}'.format(subset, now()))
+    for stats in stats_per_device:
+      # print(now())
+      # progress.print(stats, tag=subset, step=trainer.get_num_updates())
+      # print(now())
+      pass
+    return valid_losses
+
   def validate(args, trainers, task, epoch_itr, subsets):
-    valid_losses = []
-    for subset in subsets:
-      print('Validating the subset "{}"'.format(subset))
-      # Initialize data iterator
-      itr = task.get_batch_iterator(
-          dataset=task.dataset(subset),
-          max_tokens=args.max_tokens,
-          max_sentences=args.max_sentences_valid,
-          max_positions=utils.resolve_max_positions(
-              task.max_positions(),
-              list(trainers.values())[0].get_model().max_positions(),
-          ),
-          ignore_invalid_inputs=args.skip_invalid_size_inputs_valid_test,
-          required_batch_size_multiple=args.required_batch_size_multiple,
-          seed=args.seed,
-          num_workers=args.num_workers).next_epoch_itr(shuffle=False)
-      progress = progress_bar.build_progress_bar(
-          args,
-          itr,
-          epoch_itr.epoch,
-          prefix='valid on \'{}\' subset'.format(subset),
-          no_progress_bar='simple')
-      stats_per_device = model_parallel(valid_loop_fn, progress)
-      valid_losses.append([stats['loss'].avg for stats in stats_per_device])
-      print('validation stats on subset "{}" - {}'.format(subset, now()))
-      trainer = trainers[DEVICES[0]]
-      for stats in stats_per_device:
-        # FIXME(taylanbil): printing stats seem to be *VERY* slow
-        print(now())
-        progress.print(stats, tag=subset, step=trainer.get_num_updates())
-        print(now())
+    valid_losses = {
+        subset: validate_subset(args, trainers, task, epoch_itr, subset)
+        for subset in subsets}
     return valid_losses
 
   def initialize_loader_for_epoch(args, epoch_itr):
@@ -291,10 +301,8 @@ def main_tpu(args):
     print('Epoch {} Training stats:'.format(epoch_itr.epoch))
     for device, trainer in trainers.items():
       stats = fairseq_train.get_training_stats(trainer)
-      print('device {}'.format(device))
-      print(now())
-      progress.print(stats, tag=device)
-      print(now())
+      #print('device {}'.format(device))
+      #progress.print(stats, tag=device)
     print('Epoch {} Tracker Rates:'.format(epoch_itr.epoch))
     for tracker in trackers:
       print('\tRate={:.2f}'.format(tracker.rate()))
@@ -306,18 +314,23 @@ def main_tpu(args):
     if not args.disable_validation and epoch_itr.epoch % args.validate_interval == 0:
       valid_losses = validate(args, trainers, task, epoch_itr, valid_subsets)
 
-    # only use average first validation loss to update the learning rate
-    assert len(DEVICES) == len(valid_losses[0])
-    vloss = sum(valid_losses[0]) / len(DEVICES)
-    print('old learning rate: {}'.format(lr))
-    lr = trainers[DEVICES[0]].lr_step(epoch_itr.epoch, vloss)
-    print('new learning rate: {}'.format(lr))
+      # FIXME(taylanbil): computing validation losses is VERY slow! 
+      #   probably due to stats['loss'].avg implementation.
+      #   do this in the xla land and return the value?
 
-    # save checkpoint
-    if epoch_itr.epoch % args.save_interval == 0:
-      checkpoint_utils.save_checkpoint(args, trainer, epoch_itr, vloss)
+      # only use average first validation loss from the first device
+      # to update the learning rate
+      vloss = valid_losses[valid_subsets[0]][0].item()
+      print('old learning rate: {}'.format(lr))
+      lr = trainers[DEVICES[0]].lr_step(epoch_itr.epoch, vloss)
+      print('new learning rate: {}'.format(lr))
 
-    print(torch_xla._XLAC._xla_metrics_report())
+      # save checkpoint
+      if epoch_itr.epoch % args.save_interval == 0:
+        checkpoint_utils.save_checkpoint(args, trainer, epoch_itr, vloss)
+
+    if args.metrics_debug:
+      print(torch_xla._XLAC._xla_metrics_report())
 
   train_meter.stop()
   print('| done training in {:.1f} seconds'.format(train_meter.sum))
