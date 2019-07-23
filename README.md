@@ -67,7 +67,7 @@ Follow these steps to train a PyTorch model with Docker on a TPU:
     pytorch-0.1              /anaconda3/envs/pytorch-0.1
     pytorch-nightly          /anaconda3/envs/pytorch-nightly
 
-    (vm)$ source activate pytorch-0.1
+    (vm)$ conda activate pytorch-0.1
     (pytorch-0.1)$ cd /usr/share/torch-xla-0.1/pytorch/xla
     (pytorch-0.1)$ python test/test_train_mnist.py
     ```
@@ -273,6 +273,9 @@ only be enabled for debugging.
 
 * ```XLA_SAVE_TENSORS_FMT```: The format of the graphs stored within the _XLA_SAVE_TENSORS_FILE_
   file. Can be ```text``` (the default), ```dot``` (the _Graphviz_ format) or ```hlo```.
+  
+* ```XLA_METRICS_FILE```: If set, the path to a local file where the internal metrics will be
+  saved at every step. Metrics will be appended to the file, if already existing.
 
 * ```GET_TENSORS_OPBYOP```: Enables pure _OpByOp_ dispatch. The _PyTorch/TPU_ software tries to
   fuse together many _PyTorch_ operations into a single computation graph, but sometimes, either
