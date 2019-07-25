@@ -132,7 +132,7 @@ def prepare_task(args):
   # Build models and criteria to print some metadata
   criterion = task.build_criterion(args)
   model_parallel = dp.DataParallel(
-      lambda: task.build_model(args), device_ids=DEVICES, drop_last=False)
+      lambda: task.build_model(args), device_ids=DEVICES, drop_bad_batch=True)
   criteria = {
       device: task.build_criterion(args)
       for device in model_parallel._device_ids
@@ -180,19 +180,13 @@ def main_tpu(args):
     tracker = xm.RateTracker()
     for i, samples in loader:
       if not (i % args.log_steps):
-        print(
-            'training/ {}, device {}, step {}, Rate={:.2f}, Compiles={}, local_scalar_dense={}'.format(
-                now(), device, i, tracker.rate(), count_compiles(),
-                torch_xla._XLAC._xla_counter_value('aten::_local_scalar_dense')
-            )
-        )
-      # fairseq shuffles batches around so last batch ends up in the middle
-      samples = [
-          batch for batch in samples if batch['nsentences'] == BATCH_SIZE
-      ]
-      if not samples:
-        print('training/ device {}, skipping step {} due to bad batch size'.format(device, i))
-        continue
+        msg = 'training/ {}, device {}, step {}, Rate={:.2f}'.format(
+            now(), device, i, tracker.rate())
+        if args.metrics_debug:
+          msg += ', Compiles={}, _local_scalar_dense={}'.format(
+              count_compiles(),
+              torch_xla._XLAC._xla_counter_value('aten::_local_scalar_dense'))
+        print(msg)
       _log_output = trainer.train_step(samples)
       xm.optimizer_step(trainer.optimizer)
       tracker.add(len(samples) * BATCH_SIZE)
@@ -212,7 +206,7 @@ def main_tpu(args):
         print('Got bad batch! size {} (expected {})'.format(
             sample['nsentences'], BATCH_SIZE))
         continue
-      if i and not i % args.log_steps:
+      if not (i % args.log_steps):
         print('validation/ {} device {}, step {} begin'.format(
             now(), device, i))
       log_output = trainer.valid_step(sample)
@@ -324,7 +318,7 @@ def main_tpu(args):
 
       # only use average first validation loss from the first device
       # to update the learning rate
-      vloss = valid_losses[valid_subsets[0]][0].item()
+      vloss = valid_losses[valid_subsets[0]][0]
       print('old learning rate: {}'.format(lr))
       lr = trainers[DEVICES[0]].lr_step(epoch_itr.epoch, vloss)
       print('new learning rate: {}'.format(lr))
