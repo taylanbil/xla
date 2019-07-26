@@ -132,7 +132,7 @@ def prepare_task(args):
   # Build models and criteria to print some metadata
   criterion = task.build_criterion(args)
   model_parallel = dp.DataParallel(
-      lambda: task.build_model(args), device_ids=DEVICES, drop_bad_batch=True)
+      lambda: task.build_model(args), device_ids=DEVICES)
   criteria = {
       device: task.build_criterion(args)
       for device in model_parallel._device_ids
