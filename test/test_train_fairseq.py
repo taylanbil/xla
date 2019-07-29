@@ -131,18 +131,9 @@ def prepare_task(args):
     task.load_dataset(valid_sub_split, combine=True, epoch=0)
 
   # Build models and criteria to print some metadata
-  criterion = task.build_criterion(args)
   model_parallel = dp.DataParallel(
       lambda: task.build_model(args), device_ids=DEVICES)
-  criteria = {
-      device: task.build_criterion(args)
-      for device in model_parallel._device_ids
-  }
-  models = {
-      model_parallel._get_model_device(model): model
-      for model in model_parallel._models
-  }
-  model, criterion = model_parallel._models[0], list(criteria.values())[0]
+  model, criterion = task.build_model(args), task.build_criterion(args)
   print(model)
   print('| model {}, criterion {}'.format(args.arch,
                                           criterion.__class__.__name__))
@@ -150,11 +141,12 @@ def prepare_task(args):
       sum(p.numel() for p in model.parameters()),
       sum(p.numel() for p in model.parameters() if p.requires_grad),
   ))
+  del model, criterion
 
   # Build trainers
   trainers = {
-      device: Trainer(args, task, models[device], criteria[device])
-      for device in model_parallel._device_ids
+      device: Trainer(args, task, model, task.build_criterion(args))
+      for device, model in zip(model_parallel.devices, model_parallel.models)
   }
   trainer = trainers[DEVICES[0]]
   lr = trainer.get_lr()
@@ -311,10 +303,6 @@ def main_tpu(args):
     valid_losses = [None]
     if not args.disable_validation and epoch_itr.epoch % args.validate_interval == 0:
       valid_losses = validate(args, trainers, task, epoch_itr, valid_subsets)
-
-      # FIXME(taylanbil): computing validation losses is VERY slow! 
-      #   probably due to stats['loss'].avg implementation.
-      #   do this in the xla land and return the value?
 
       # only use average first validation loss from the first device
       # to update the learning rate
