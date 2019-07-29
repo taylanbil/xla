@@ -4,6 +4,7 @@ TODO(taylanbil): DO NOT SUBMIT without a detailed description of
 test_train_fairseq.
 """
 
+
 import argparse
 import sys
 import os
@@ -174,19 +175,23 @@ def now():
 
 def main_tpu(args):
 
+  def log_step(step_type, device, step, tracker=None, metrics_debug=False):
+    msg = '{}/ {}, device {}, step {}'.format(step_type, now(), device, step)
+    if tracker:
+      msg += ', Rate={:.2f}'.format(tracker.rate())
+    if metrics_debug:
+      msg += ', Compiles={}, _local_scalar_dense={}'.format(
+          count_compiles(),
+          torch_xla._XLAC._xla_counter_value('aten::_local_scalar_dense'))
+    return msg
+
   def train_loop_fn(model, loader, device, context):
     trainer = trainers[str(device)]
     stats = None
     tracker = xm.RateTracker()
     for i, samples in loader:
       if not (i % args.log_steps):
-        msg = 'training/ {}, device {}, step {}, Rate={:.2f}'.format(
-            now(), device, i, tracker.rate())
-        if args.metrics_debug:
-          msg += ', Compiles={}, _local_scalar_dense={}'.format(
-              count_compiles(),
-              torch_xla._XLAC._xla_counter_value('aten::_local_scalar_dense'))
-        print(msg)
+        print(log_step('training', device, i, tracker=tracker, metrics_debug=args.metrics_debug))
       _log_output = trainer.train_step(samples)
       xm.optimizer_step(trainer.optimizer)
       tracker.add(len(samples) * BATCH_SIZE)
@@ -202,13 +207,8 @@ def main_tpu(args):
         meter.reset()
     extra_meters = collections.defaultdict(lambda: AverageMeter())
     for i, sample in loader:
-      if sample['nsentences'] != BATCH_SIZE:
-        print('Got bad batch! size {} (expected {})'.format(
-            sample['nsentences'], BATCH_SIZE))
-        continue
       if not (i % args.log_steps):
-        print('validation/ {} device {}, step {} begin'.format(
-            now(), device, i))
+        print(log_step('validation', device, i, tracker=None, metrics_debug=args.metrics_debug))
       log_output = trainer.valid_step(sample)
       for k, v in log_output.items():
         if k in ['loss', 'nll_loss', 'ntokens', 'nsentences', 'sample_size']:
