@@ -4,7 +4,6 @@ TODO(taylanbil): DO NOT SUBMIT without a detailed description of
 test_train_fairseq.
 """
 
-
 import argparse
 import sys
 import os
@@ -33,12 +32,14 @@ collate_tokens_gpu = data_utils.collate_tokens
 import train as fairseq_train
 
 
-def collate_tokens_new(values,
+def collate_tokens_tpu(values,
                        pad_idx,
                        eos_idx=None,
                        left_pad=False,
                        move_eos_to_beginning=False):
-  """Copied over from fairseq.data_utils, and modified so that num_columns in the output tensor is not too variable."""
+  # Copied over from fairseq.data_utils, and modified so that num_columns
+  # in the output tensor is not too variable.
+
   # correcting columns
   global PAD_TO_LENGTH
   size = max(v.size(0) for v in values)
@@ -65,7 +66,7 @@ def collate_tokens_new(values,
   return res
 
 
-data_utils.collate_tokens = collate_tokens_new
+data_utils.collate_tokens = collate_tokens_tpu
 
 from fairseq import options, tasks, checkpoint_utils, progress_bar, utils
 from fairseq.trainer import Trainer
@@ -95,7 +96,9 @@ def parse_args():
       print('suppressing "fp16" as this is controlled by env var XLA_USE_BF16')
       FLAGS.fp16 = False
     if FLAGS.clip_norm == 0.0:
-      print('clip_norm needs to be nonzero for good TPU performance, setting it to 25')
+      print(
+          'clip_norm needs to be nonzero for good TPU performance, setting it to 25'
+      )
       FLAGS.clip_norm = 25.0
     if FLAGS.distributed_world_size > 1:
       print('suppressing "distributed_world_size"')
@@ -183,7 +186,13 @@ def main_tpu(args):
     tracker = xm.RateTracker()
     for i, samples in loader:
       if not (i % args.log_steps):
-        print(log_step('training', device, i, tracker=tracker, metrics_debug=args.metrics_debug))
+        print(
+            log_step(
+                'training',
+                device,
+                i,
+                tracker=tracker,
+                metrics_debug=args.metrics_debug))
       _log_output = trainer.train_step(samples)
       xm.optimizer_step(trainer.optimizer)
       tracker.add(len(samples) * BATCH_SIZE)
@@ -200,7 +209,13 @@ def main_tpu(args):
     extra_meters = collections.defaultdict(lambda: AverageMeter())
     for i, sample in loader:
       if not (i % args.log_steps):
-        print(log_step('validation', device, i, tracker=None, metrics_debug=args.metrics_debug))
+        print(
+            log_step(
+                'validation',
+                device,
+                i,
+                tracker=None,
+                metrics_debug=args.metrics_debug))
       log_output = trainer.valid_step(sample)
       for k, v in log_output.items():
         if k in ['loss', 'nll_loss', 'ntokens', 'nsentences', 'sample_size']:
@@ -236,16 +251,17 @@ def main_tpu(args):
     valid_losses = [stats['loss'].avg for stats in stats_per_device]
     print('validation stats on subset "{}" - {}'.format(subset, now()))
     for stats in stats_per_device:
-      # print(now())
-      # progress.print(stats, tag=subset, step=trainer.get_num_updates())
-      # print(now())
+      print(now())
+      progress.print(stats, tag=subset, step=trainer.get_num_updates())
+      print(now())
       pass
     return valid_losses
 
   def validate(args, trainers, task, epoch_itr, subsets):
     valid_losses = {
         subset: validate_subset(args, trainers, task, epoch_itr, subset)
-        for subset in subsets}
+        for subset in subsets
+    }
     return valid_losses
 
   def initialize_loader_for_epoch(args, epoch_itr):
@@ -290,8 +306,8 @@ def main_tpu(args):
     print('Epoch {} Training stats:'.format(epoch_itr.epoch))
     for device, trainer in trainers.items():
       stats = fairseq_train.get_training_stats(trainer)
-      #print('device {}'.format(device))
-      #progress.print(stats, tag=device)
+      print('device {}'.format(device))
+      progress.print(stats, tag=device)
     print('Epoch {} Tracker Rates:'.format(epoch_itr.epoch))
     for tracker in trackers:
       print('\tRate={:.2f}'.format(tracker.rate()))
@@ -300,7 +316,6 @@ def main_tpu(args):
       print(torch_xla._XLAC._xla_metrics_report())
 
     # VALIDATION
-    valid_losses = [None]
     if not args.disable_validation and epoch_itr.epoch % args.validate_interval == 0:
       valid_losses = validate(args, trainers, task, epoch_itr, valid_subsets)
 
