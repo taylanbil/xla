@@ -70,8 +70,8 @@ class ParallelLoader(object):
                devices,
                batchdim=0,
                drop_last=False,
-               loader_prefetch_size=8,
-               device_prefetch_size=4):
+               loader_prefetch_size=100,
+               device_prefetch_size=20):
     self._loader = loader
     self._batch_size = None
     self._devices = list(devices)

@@ -152,7 +152,7 @@ def timed(fn, msg='', printfn=eprint):
     printfn = get_print_fn()
   s = time.time()
   result = fn()
-  printfn('{}{:.3f}ms'.format(msg, 1000.0 * (time.time() - s)))
+  printfn('{}{:.3f}ms  started @ {}'.format(msg, 1000.0 * (time.time() - s), s))
   return result
 
 

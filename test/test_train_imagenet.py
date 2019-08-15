@@ -133,11 +133,12 @@ def train_imagenet():
     tracker = xm.RateTracker()
     model.train()
     for x, (data, target) in loader:
-      optimizer.zero_grad()
-      output = model(data)
-      loss = loss_fn(output, target)
-      loss.backward()
-      xm.optimizer_step(optimizer)
+      print('STEP', x)
+      xu.timed(lambda: optimizer.zero_grad(), 'zerograd: ')
+      output = xu.timed(lambda: model(data), 'forward: ')
+      loss = xu.timed(lambda: loss_fn(output, target), 'loss: ')
+      xu.timed(lambda: loss.backward(), 'backward: ')
+      xu.timed(lambda: xm.optimizer_step(optimizer), 'optimstep: ')
       tracker.add(FLAGS.batch_size)
       if x % FLAGS.log_steps == 0:
         print('[{}]({}) Loss={:.5f} Rate={:.2f}'.format(device, x, loss.item(),
