@@ -10007,12 +10007,14 @@ TEST_F(AtenXlaTensorTest, TestEmbeddingBackward) {
   }
 }
 
-TEST_F(AtenXlaTensorTest, TestEarlySyncLiveTensors) {
+TEST_F(AtenXlaTensorTest, TestLocalScalarDense) {
   torch::Tensor scalar_tensor =
       torch::scalar_tensor(1., torch::TensorOptions(torch::kFloat));
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor xla_scalar_tensor = CopyToDevice(scalar_tensor, device);
-    torch::Scalar scalar = xla_scalar_tensor.item();
+    torch::Scalar scalar1 = xla_scalar_tensor.item();
+    torch::Scalar scalar2 = scalar_tensor.item();
+    ASSERT_EQ(scalar1.to<float>(), scalar2.to<float>());
   });
   static bool sync =
       xla::sys_util::GetEnvBool("XLA_SYNC_BEFORE_ITEM_CALL", true);
@@ -10024,6 +10026,8 @@ TEST_F(AtenXlaTensorTest, TestEarlySyncLiveTensors) {
     ExpectCounterNotChanged("EarlySyncLiveTensorsCount",
                             cpp_test::GetIgnoredCounters());
   }
+  ExpectCounterChanged("aten::_local_scalar_dense",
+                       cpp_test::GetIgnoredCounters());
 }
 
 }  // namespace cpp_test
