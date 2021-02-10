@@ -10010,10 +10010,10 @@ TEST_F(AtenXlaTensorTest, TestEmbeddingBackward) {
 TEST_F(AtenXlaTensorTest, TestLocalScalarDense) {
   torch::Tensor scalar_tensor =
       torch::scalar_tensor(1., torch::TensorOptions(torch::kFloat));
+  torch::Scalar scalar1 = scalar_tensor.item();
   ForEachDevice([&](const torch::Device& device) {
     torch::Tensor xla_scalar_tensor = CopyToDevice(scalar_tensor, device);
-    torch::Scalar scalar1 = xla_scalar_tensor.item();
-    torch::Scalar scalar2 = scalar_tensor.item();
+    torch::Scalar scalar2 = xla_scalar_tensor.item();
     ASSERT_EQ(scalar1.to<float>(), scalar2.to<float>());
   });
   static bool sync =
