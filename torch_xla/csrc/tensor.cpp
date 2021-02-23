@@ -266,6 +266,7 @@ class XLATensor::DeviceContextArena {
   struct DeviceContext {
     std::mutex lock;
     std::map<xla::int64, std::weak_ptr<Data>> tensors_data;
+    std::map<xla::int64, std::weak_ptr<Data>> views_data;
     xla::uint64 seed = 101;
     xla::uint64 running_seed = 101;
     ir::Value seed_ir_value;
@@ -277,11 +278,27 @@ class XLATensor::DeviceContextArena {
     return arena;
   }
 
+  void RegisterView(std::shared_ptr<Data> data) {
+    DeviceContext* devctx = GetDeviceContext(data->device);
+    std::lock_guard<std::mutex> lock(devctx->lock);
+    devctx->views_data.emplace(data->unique_id, data);
+    XLA_COUNTER("CreateXlaView", 1);
+  }
+
   void RegisterTensor(std::shared_ptr<Data> data) {
     DeviceContext* devctx = GetDeviceContext(data->device);
     std::lock_guard<std::mutex> lock(devctx->lock);
     devctx->tensors_data.emplace(data->unique_id, data);
     XLA_COUNTER("CreateXlaTensor", 1);
+  }
+
+  void UnregisterView(Data* data) {
+    DeviceContext* devctx = GetDeviceContext(data->device);
+    std::lock_guard<std::mutex> lock(devctx->lock);
+    if (devctx->views_data.find(data->unique_id) != devctx->views_data.end()) {
+        devctx->views_data.erase(data->unique_id);
+        XLA_COUNTER("DestroyXlaView", 1);
+    }
   }
 
   void UnregisterTensor(Data* data) {
@@ -291,13 +308,23 @@ class XLATensor::DeviceContextArena {
     XLA_COUNTER("DestroyXlaTensor", 1);
   }
 
-  std::vector<XLATensor> GetLiveTensors(const Device* device) {
+  std::vector<XLATensor> GetLiveTensors(
+          const Device* device,
+          bool include_views=true) {
     std::vector<XLATensor> tensors;
     auto fn = [&](DeviceContext* devctx) {
       std::lock_guard<std::mutex> lock(devctx->lock);
       for (auto& uid_wptr : devctx->tensors_data) {
         std::shared_ptr<Data> data = uid_wptr.second.lock();
-        if (data != nullptr) {
+        auto uid = uid_wptr.first;
+        if (
+                (data != nullptr) &&
+                (
+                 not (
+                    (not include_views) && (devctx->views_data.find(uid) != devctx->views_data.end())
+                 )
+                )
+           ) {
           tensors.push_back(XLATensor(std::move(data)));
         }
       }
@@ -394,7 +421,11 @@ struct DeviceDataInfo : public xla::ComputationClient::Data::Info {
   bool read_only = false;
 };
 
-XLATensor::Data::~Data() { DeviceContextArena::Get()->UnregisterTensor(this); }
+XLATensor::Data::~Data() { 
+    DeviceContextArena::Get()->UnregisterTensor(this); 
+    DeviceContextArena::Get()->UnregisterView(this); 
+
+}
 
 XLATensor::Async::Async(
     SyncTensorCollection* coll,
@@ -459,6 +490,7 @@ XLATensor XLATensor::Create(
     c10::optional<at::ScalarType> logical_element_type) {
   XLATensor xtensor(std::move(view), device, logical_element_type);
   DeviceContextArena::Get()->RegisterTensor(xtensor.data_ptr());
+  DeviceContextArena::Get()->RegisterView(xtensor.data_ptr());
   return xtensor;
 }
 
@@ -893,8 +925,8 @@ void XLATensor::UpdateFromTensorOut(const XLATensor& tensor) {
   SetIrValue(tensor.GetIrValue());
 }
 
-std::vector<XLATensor> XLATensor::GetLiveTensors(const Device* device) {
-  return DeviceContextArena::Get()->GetLiveTensors(device);
+std::vector<XLATensor> XLATensor::GetLiveTensors(const Device* device, bool include_views) {
+  return DeviceContextArena::Get()->GetLiveTensors(device, include_views);
 }
 
 std::vector<xla::ComputationClient::DataPtr> XLATensor::GatherTensorsXlaData(
@@ -1366,10 +1398,11 @@ void XLATensor::SyncTensorsGraph(std::vector<XLATensor>* tensors,
 
 void XLATensor::SyncLiveTensorsGraph(const Device* device,
                                      absl::Span<const std::string> devices,
-                                     bool wait) {
+                                     bool wait,
+                                     bool include_views) {
   tensorflow::profiler::TraceMe activity(
       "SyncLiveTensorsGraph", tensorflow::profiler::TraceMeLevel::kInfo);
-  auto tensors = GetLiveTensors(device);
+  auto tensors = GetLiveTensors(device, include_views);
   TF_VLOG(4) << tensors.size() << " live tensors: devices=("
              << absl::StrJoin(devices, ",") << ")";
   SyncTensorsGraph(&tensors, devices, wait, /*sync_xla_data=*/true);
