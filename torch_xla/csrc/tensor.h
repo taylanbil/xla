@@ -144,8 +144,7 @@ class XLATensor {
   // devices will be returned. Returned tensors are sorted by device as primary
   // key, and by unique ID as secondary key.
   static std::vector<XLATensor> GetLiveTensors(const Device* device,
-          bool include_views=true
-          );
+                                               bool include_views = true);
 
   // Applies all the pending IR operations queued over the input tensors. All
   // the tensors must be on the same device. If wait is true, the sync operation
@@ -161,8 +160,7 @@ class XLATensor {
   // which should be partecipating into the replicated computation.
   static void SyncLiveTensorsGraph(const Device* device,
                                    absl::Span<const std::string> devices,
-                                   bool wait,
-                                   bool include_views=true);
+                                   bool wait, bool include_views = true);
 
   // Marks an execution step, which allows the tensor framework to understand
   // the computation boundaries.

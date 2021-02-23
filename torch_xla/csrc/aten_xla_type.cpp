@@ -3510,8 +3510,7 @@ at::Scalar AtenXlaType::_local_scalar_dense(const at::Tensor& self) {
     XLATensor self_tensor = bridge::GetXlaTensor(self);
     XLATensor::SyncLiveTensorsGraph(&self_tensor.GetDevice(), /*devices=*/{},
                                     /*wait=*/true,
-                                    /*include_views=*/false
-                                    );
+                                    /*include_views=*/false);
     XLA_COUNTER("EarlySyncLiveTensorsCount", 1);
   }
   return AtenXlaTypeDefault::_local_scalar_dense(self);
